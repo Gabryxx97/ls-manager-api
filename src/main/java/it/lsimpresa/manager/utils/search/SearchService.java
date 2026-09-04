@@ -14,6 +14,7 @@ import org.springframework.data.support.PageableExecutionUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -106,53 +107,86 @@ public class SearchService implements ISearchService{
 			String field, 
 			Operator op) {
 		Predicate res=null;
+		Object[] values = convertValues(entity.get(field).getJavaType(), op.getValues());
 		switch (op.getOperator()) {
 		case Equal.OPERATOR:
 			Equal eq=new Equal(cb,entity);
-			res=eq.getCriteria(field, op.getValues());
+			res=eq.getCriteria(field, values);
 			break;
 		case EqualOrNull.OPERATOR:
 			EqualOrNull eqOrNull = new EqualOrNull(cb, entity);
-			res = eqOrNull.getCriteria(field, op.getValues());
+			res = eqOrNull.getCriteria(field, values);
 			break;
 		case Between.OPERATOR:
 			Between bet=new Between(cb,entity);
-			res=bet.getCriteria(field, op.getValues());
+			res=bet.getCriteria(field, values);
 			break;
 		case Like.OPERATOR:
 			Like lik=new Like(cb,entity);
-			res=lik.getCriteria(field, op.getValues());
+			res=lik.getCriteria(field, values);
 			break;
 		case ILike.OPERATOR:
 			ILike ilik=new ILike(cb,entity);
-			res=ilik.getCriteria(field, op.getValues());
+			res=ilik.getCriteria(field, values);
 			break;
 		case GreaterThan.OPERATOR:
 			GreaterThan gt = new GreaterThan(cb,entity);
-			res=gt.getCriteria(field, op.getValues());
+			res=gt.getCriteria(field, values);
 			break;
 		case GreaterThanOrNull.OPERATOR:
 			GreaterThanOrNull gtOrNull = new GreaterThanOrNull(cb,entity);
-			res=gtOrNull.getCriteria(field, op.getValues());
+			res=gtOrNull.getCriteria(field, values);
 			break;
 		case GreaterThanEqual.OPERATOR:
 			GreaterThanEqual gte = new GreaterThanEqual(cb,entity);
-			res=gte.getCriteria(field, op.getValues());
+			res=gte.getCriteria(field, values);
 			break;
 		case LessThan.OPERATOR:
 			LessThan lt = new LessThan(cb,entity);
-			res=lt.getCriteria(field, op.getValues());
+			res=lt.getCriteria(field, values);
 			break;
 		case LessThanEqual.OPERATOR:
 			LessThanEqual lte = new LessThanEqual(cb,entity);
-			res=lte.getCriteria(field, op.getValues());
+			res=lte.getCriteria(field, values);
 			break;
 		case In.OPERATOR:
 			In in = new In(cb,entity);
-			res=in.getCriteria(field, op.getValues());
+			res=in.getCriteria(field, values);
 			break;
 		}
 		return res;
+	}
+
+	private Object[] convertValues(Class<?> targetType, Object[] values) {
+		Object[] converted = new Object[values.length];
+		for (int i = 0; i < values.length; i++) {
+			converted[i] = convertValue(targetType, values[i]);
+		}
+		return converted;
+	}
+
+	@SuppressWarnings({"rawtypes", "unchecked"})
+	private Object convertValue(Class<?> targetType, Object value) {
+		if (value == null || targetType.isInstance(value)) return value;
+		if (targetType.isEnum() && value instanceof String text) {
+			try {
+				return Enum.valueOf((Class<? extends Enum>) targetType, text.toUpperCase());
+			} catch (IllegalArgumentException exception) {
+				throw new IllegalArgumentException("Valore filtro non valido: " + text);
+			}
+		}
+		if (targetType == LocalDate.class && value instanceof String text) {
+			try {
+				return LocalDate.parse(text);
+			} catch (java.time.format.DateTimeParseException exception) {
+				throw new IllegalArgumentException("Data filtro non valida: " + text);
+			}
+		}
+		if (value instanceof Number number) {
+			if (targetType == Long.class || targetType == long.class) return number.longValue();
+			if (targetType == Integer.class || targetType == int.class) return number.intValue();
+		}
+		return value;
 	}
 
 }

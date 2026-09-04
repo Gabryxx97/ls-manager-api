@@ -1,8 +1,9 @@
 package it.lsimpresa.manager.user;
 
 public interface IUserService {
-    UserDto save(UserDto user);
+    UserDto create(UserDto user);
+    UserDto update(Long id, UserDto user);
     UserDto findByUsername(String username);
     UserDto find(Long id);
-    UserDto delete(Long	id);
+    void delete(Long id);
 }

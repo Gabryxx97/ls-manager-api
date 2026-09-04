@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import it.lsimpresa.manager.utils.search.Searchable;
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.ToString;
 
 import java.time.LocalDateTime;
 
@@ -15,11 +16,12 @@ public @Data class UserJpa implements Searchable {
 	@Column(name="id")
 	private Long id;
 
-	@Column(name = "username", unique=true,length = 128)
+	@Column(name = "username", nullable = false, unique=true,length = 128)
     private String username;
 
-	@Column(name = "password")
+	@Column(name = "password", nullable = false)
 	@JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+	@ToString.Exclude
 	private String password;
 
 	@Column(name = "name",length = 128)
@@ -28,7 +30,7 @@ public @Data class UserJpa implements Searchable {
 	@Column(name = "surname",length = 128)
 	private String surname;
 
-	@Column(name = "role")
+	@Column(name = "role", nullable = false)
 	@Enumerated(EnumType.STRING)
     private UserRole role;
 
@@ -56,6 +58,9 @@ public @Data class UserJpa implements Searchable {
 	@PreUpdate
 	@PrePersist
 	public void searchFill() {
-		search = name + " " + surname + " " + username;
+		search = String.join(" ",
+				name == null ? "" : name,
+				surname == null ? "" : surname,
+				username == null ? "" : username).trim();
 	}
 }

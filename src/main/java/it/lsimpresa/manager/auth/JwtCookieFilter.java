@@ -7,8 +7,10 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.AllArgsConstructor;
+import it.lsimpresa.manager.exception.ApiProblemWriter;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -20,11 +22,21 @@ import java.io.IOException;
 
 @Component
 @Slf4j
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class JwtCookieFilter extends OncePerRequestFilter {
 
     private final JwtTokenService jwtTokenService;
     private final ApplicationUserDetailsService userDetailsService;
+    private final ApiProblemWriter problemWriter;
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return !path.startsWith("/api/")
+                || "/api/login".equals(path)
+                || "/api/refresh".equals(path)
+                || "/api/csrf".equals(path);
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest  request,
@@ -32,24 +44,9 @@ public class JwtCookieFilter extends OncePerRequestFilter {
                                     FilterChain         chain)
             throws ServletException, IOException {
 
-        String path = request.getRequestURI();
-        if (!path.startsWith("/api/")
-                || "/api/refresh".equals(path)
-                || "/api/login".equals(path)
-                || "/api/signup".equals(path)
-                || "/api/account-verify".equals(path)
-                || "/api/password-recovery".equals(path)
-                || "/api/reset-password".equals(path)) {
-            chain.doFilter(request, response);
-            return;
-        }
         Cookie access = WebUtils.getCookie(request, "access_token");
         if (access == null) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write(
-                    "{\"error\":\"Token missing\",\"message\":\"Access token not present (possibly expired)\"}"
-            );
+            chain.doFilter(request, response);
             return;
         }
         String token = access.getValue();
@@ -67,16 +64,11 @@ public class JwtCookieFilter extends OncePerRequestFilter {
 
         } catch (TokenExpiredException ex) {
             log.debug("Access token expired – returning 401");
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"error\":\"Token expired\",\"message\":\"Access token has expired\"}");
-
+            problemWriter.write(response, request, HttpStatus.UNAUTHORIZED, "Sessione scaduta");
 
         } catch (JWTVerificationException ex) {
-            log.debug("Invalid JWT – returning 403");
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"error\":\"Invalid token\",\"message\":\"Signature or claims invalid\"}");
+            log.debug("Invalid JWT – returning 401");
+            problemWriter.write(response, request, HttpStatus.UNAUTHORIZED, "Token di accesso non valido");
         }
     }
 }
