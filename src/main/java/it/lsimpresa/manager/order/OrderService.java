@@ -3,6 +3,8 @@ package it.lsimpresa.manager.order;
 import it.lsimpresa.manager.article.ArticleJpa;
 import it.lsimpresa.manager.article.ArticleRepository;
 import it.lsimpresa.manager.exception.ResourceNotFoundException;
+import it.lsimpresa.manager.workorder.WorkOrderJpa;
+import it.lsimpresa.manager.workorder.WorkOrderRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,7 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final ArticleRepository articleRepository;
+    private final WorkOrderRepository workOrderRepository;
 
     @Transactional
     public OrderJpa create(OrderDraft draft) {
@@ -55,8 +58,8 @@ public class OrderService {
         if (draft == null) {
             throw new IllegalArgumentException("I dati dell'ordine sono obbligatori");
         }
-        if (draft.name() == null || draft.name().isBlank()) {
-            throw new IllegalArgumentException("Il nome è obbligatorio");
+        if (draft.workOrderId() == null) {
+            throw new IllegalArgumentException("La commessa è obbligatoria");
         }
         if (draft.date() == null || draft.priority() == null || draft.status() == null) {
             throw new IllegalArgumentException("Data, priorità e stato sono obbligatori");
@@ -66,6 +69,8 @@ public class OrderService {
         }
 
         Map<Long, Integer> quantities = validateAndCollectDetails(draft.details());
+        WorkOrderJpa workOrder = workOrderRepository.findById(draft.workOrderId())
+                .orElseThrow(() -> new IllegalArgumentException("La commessa non esiste"));
         Map<Long, ArticleJpa> articles = new LinkedHashMap<>();
         articleRepository.findAllById(quantities.keySet())
                 .forEach(article -> articles.put(article.getId(), article));
@@ -82,7 +87,8 @@ public class OrderService {
             details.add(detail);
         });
 
-        order.setName(draft.name().trim().replaceAll("\\s+", " "));
+        order.setWorkOrder(workOrder);
+        order.setName(workOrder.getName());
         order.setDate(draft.date());
         order.setPriority(draft.priority());
         order.setStatus(draft.status());

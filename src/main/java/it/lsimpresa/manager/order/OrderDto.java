@@ -7,6 +7,7 @@ import java.util.List;
 @Data
 public class OrderDto {
     private Long id;
+    private Long workOrderId;
     private String name;
     private LocalDate date;
     private OrderPriority priority;

@@ -10,6 +10,7 @@ public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
     public OrderSummaryDto toSummary(OrderJpa entity) {
         OrderSummaryDto dto = new OrderSummaryDto();
         dto.setId(entity.getId());
+        dto.setWorkOrderId(entity.getWorkOrder().getId());
         dto.setName(entity.getName());
         dto.setDate(entity.getDate());
         dto.setPriority(entity.getPriority());
@@ -20,6 +21,7 @@ public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
     public OrderDto toDto(OrderJpa entity) {
         OrderDto dto = new OrderDto();
         dto.setId(entity.getId());
+        dto.setWorkOrderId(entity.getWorkOrder().getId());
         dto.setName(entity.getName());
         dto.setDate(entity.getDate());
         dto.setPriority(entity.getPriority());
@@ -32,7 +34,7 @@ public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
         List<OrderDraft.Detail> details = request.getDetails().stream()
                 .map(detail -> new OrderDraft.Detail(detail.getArticleId(), detail.getQuantity()))
                 .toList();
-        return new OrderDraft(request.getName(), request.getDate(), request.getPriority(),
+        return new OrderDraft(request.getWorkOrderId(), request.getDate(), request.getPriority(),
                 request.getStatus(), details);
     }
 

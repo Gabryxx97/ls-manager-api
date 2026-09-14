@@ -4,6 +4,8 @@ import it.lsimpresa.manager.article.ArticleJpa;
 import it.lsimpresa.manager.article.ArticleRepository;
 import it.lsimpresa.manager.order.OrderJpa;
 import it.lsimpresa.manager.order.OrderRepository;
+import it.lsimpresa.manager.workorder.WorkOrderJpa;
+import it.lsimpresa.manager.workorder.WorkOrderRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,10 +37,14 @@ class OrderApiIntegrationTests {
     @Autowired
     private ArticleRepository articleRepository;
 
+    @Autowired
+    private WorkOrderRepository workOrderRepository;
+
     @BeforeEach
     @AfterEach
     void clearData() {
         orderRepository.deleteAll();
+        workOrderRepository.deleteAll();
         articleRepository.deleteAll();
     }
 
@@ -62,15 +68,17 @@ class OrderApiIntegrationTests {
     @Test
     void createReturnsDetailedOrderAndListReturnsOnlyHeader() throws Exception {
         ArticleJpa article = saveArticle("Bullone M8", "Zincato");
+        WorkOrderJpa workOrder = saveWorkOrder("  Ordine   urgente  ");
 
         String response = mockMvc.perform(post("/api/orders")
                         .with(role("USER_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(orderJson("  Ordine   urgente  ", "2026-09-05", "HIGH",
+                        .content(orderJson(workOrder.getId(), "2026-09-05", "HIGH",
                                 "DRAFT", article.getId(), 3)))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", org.hamcrest.Matchers.matchesPattern("/api/orders/\\d+")))
                 .andExpect(jsonPath("$.name").value("Ordine urgente"))
+                .andExpect(jsonPath("$.workOrderId").value(workOrder.getId()))
                 .andExpect(jsonPath("$.date").value("2026-09-05"))
                 .andExpect(jsonPath("$.priority").value("HIGH"))
                 .andExpect(jsonPath("$.status").value("DRAFT"))
@@ -107,11 +115,12 @@ class OrderApiIntegrationTests {
         ArticleJpa oldArticle = saveArticle("Vecchio", "Prima riga");
         ArticleJpa newArticle = saveArticle("Nuovo", "Seconda riga");
         long orderId = createOrder(oldArticle.getId());
+        WorkOrderJpa updatedWorkOrder = saveWorkOrder("Ordine aggiornato");
 
         mockMvc.perform(put("/api/orders/{id}", orderId)
                         .with(role("ADMIN_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(orderJson("Ordine aggiornato", "2026-09-06", "STANDARD",
+                        .content(orderJson(updatedWorkOrder.getId(), "2026-09-06", "STANDARD",
                                 "COMPLETED", newArticle.getId(), 9)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.details.length()").value(1))
@@ -127,11 +136,12 @@ class OrderApiIntegrationTests {
     void failedUpdateKeepsExistingOrderUnchanged() throws Exception {
         ArticleJpa article = saveArticle("Valido", null);
         long orderId = createOrder(article.getId());
+        WorkOrderJpa otherWorkOrder = saveWorkOrder("Non salvare");
 
         mockMvc.perform(put("/api/orders/{id}", orderId)
                         .with(role("USER_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(orderJson("Non salvare", "2026-09-08", "LOW",
+                        .content(orderJson(otherWorkOrder.getId(), "2026-09-08", "LOW",
                                 "SHIPPED", 999999L, 7)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("Uno o più articoli non esistono"));
@@ -145,14 +155,17 @@ class OrderApiIntegrationTests {
     @Test
     void invalidLinesAndDuplicateArticlesAreRejected() throws Exception {
         ArticleJpa article = saveArticle("Articolo", null);
+        WorkOrderJpa emptyWorkOrder = saveWorkOrder("Vuoto");
+        WorkOrderJpa quantityWorkOrder = saveWorkOrder("Quantità errata");
+        WorkOrderJpa duplicateWorkOrder = saveWorkOrder("Duplicato");
 
         mockMvc.perform(post("/api/orders")
                         .with(role("USER_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"Vuoto","date":"2026-09-05","priority":"LOW",
+                                {"workOrderId":%d,"date":"2026-09-05","priority":"LOW",
                                  "status":"DRAFT","details":[]}
-                                """))
+                                """.formatted(emptyWorkOrder.getId())))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.details")
                         .value("L'ordine deve contenere almeno una riga"));
@@ -160,7 +173,7 @@ class OrderApiIntegrationTests {
         mockMvc.perform(post("/api/orders")
                         .with(role("USER_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(orderJson("Quantità errata", "2026-09-05", "LOW",
+                        .content(orderJson(quantityWorkOrder.getId(), "2026-09-05", "LOW",
                                 "DRAFT", article.getId(), 0)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors['details[0].quantity']")
@@ -170,15 +183,35 @@ class OrderApiIntegrationTests {
                         .with(role("USER_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(("""
-                                {"name":"Duplicato","date":"2026-09-05","priority":"LOW",
+                                {"workOrderId":%d,"date":"2026-09-05","priority":"LOW",
                                  "status":"DRAFT","details":[
                                    {"articleId":%d,"quantity":1},
                                    {"articleId":%d,"quantity":2}
                                  ]}
-                                """).formatted(article.getId(), article.getId())))
+                                """).formatted(duplicateWorkOrder.getId(), article.getId(), article.getId())))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail")
                         .value("Lo stesso articolo non può comparire più volte nell'ordine"));
+    }
+
+    @Test
+    void workOrderIsRequiredAndMustExist() throws Exception {
+        ArticleJpa article = saveArticle("Articolo", null);
+
+        mockMvc.perform(post("/api/orders").with(role("USER_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"date":"2026-09-05","priority":"LOW","status":"DRAFT",
+                                 "details":[{"articleId":%d,"quantity":1}]}
+                                """.formatted(article.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.workOrderId").value("La commessa è obbligatoria"));
+
+        mockMvc.perform(post("/api/orders").with(role("USER_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(orderJson(999999L, "2026-09-05", "LOW", "DRAFT", article.getId(), 1)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("La commessa non esiste"));
     }
 
     @Test
@@ -236,21 +269,28 @@ class OrderApiIntegrationTests {
 
     private long createOrder(String name, String date, String priority,
                              String status, Long articleId) throws Exception {
+        WorkOrderJpa workOrder = saveWorkOrder(name);
         String location = mockMvc.perform(post("/api/orders")
                         .with(role("ADMIN_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(orderJson(name, date, priority, status, articleId, 2)))
+                        .content(orderJson(workOrder.getId(), date, priority, status, articleId, 2)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getHeader("Location");
         return Long.parseLong(location.substring(location.lastIndexOf('/') + 1));
     }
 
-    private String orderJson(String name, String date, String priority,
+    private String orderJson(Long workOrderId, String date, String priority,
                              String status, Long articleId, int quantity) {
         return ("""
-                {"name":"%s","date":"%s","priority":"%s","status":"%s",
+                {"workOrderId":%d,"name":"nome ignorato","date":"%s","priority":"%s","status":"%s",
                  "details":[{"articleId":%d,"quantity":%d}]}
-                """).formatted(name, date, priority, status, articleId, quantity);
+                """).formatted(workOrderId, date, priority, status, articleId, quantity);
+    }
+
+    private WorkOrderJpa saveWorkOrder(String name) {
+        WorkOrderJpa workOrder = new WorkOrderJpa();
+        workOrder.setName(name);
+        return workOrderRepository.saveAndFlush(workOrder);
     }
 
     private ArticleJpa saveArticle(String name, String description) {

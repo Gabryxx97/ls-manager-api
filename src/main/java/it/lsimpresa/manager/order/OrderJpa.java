@@ -1,6 +1,7 @@
 package it.lsimpresa.manager.order;
 
 import it.lsimpresa.manager.utils.search.Searchable;
+import it.lsimpresa.manager.workorder.WorkOrderJpa;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -9,16 +10,16 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -38,10 +39,13 @@ public class OrderJpa implements Searchable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @NotBlank
-    @Size(max = 255)
     @Column(name = "name", nullable = false, length = 255)
     private String name;
+
+    @NotNull
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "work_order_id", nullable = false)
+    private WorkOrderJpa workOrder;
 
     @NotNull
     @Column(name = "date", nullable = false)
@@ -86,7 +90,11 @@ public class OrderJpa implements Searchable {
     @PreUpdate
     public void searchFill() {
         validateDetails();
-        search = name == null ? "" : name.trim();
+        if (workOrder == null || workOrder.getId() == null) {
+            throw new IllegalArgumentException("La commessa è obbligatoria");
+        }
+        name = workOrder.getName();
+        search = name;
     }
 
     private void validateDetails() {

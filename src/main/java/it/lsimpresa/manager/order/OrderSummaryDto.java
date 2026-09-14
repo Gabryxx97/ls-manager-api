@@ -6,6 +6,7 @@ import java.time.LocalDate;
 @Data
 public class OrderSummaryDto {
     private Long id;
+    private Long workOrderId;
     private String name;
     private LocalDate date;
     private OrderPriority priority;

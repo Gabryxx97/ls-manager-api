@@ -2,6 +2,8 @@ package it.lsimpresa.manager.order;
 
 import it.lsimpresa.manager.article.ArticleJpa;
 import it.lsimpresa.manager.article.ArticleRepository;
+import it.lsimpresa.manager.workorder.WorkOrderJpa;
+import it.lsimpresa.manager.workorder.WorkOrderRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -26,12 +28,16 @@ class OrderServiceTest {
     @Mock
     private ArticleRepository articleRepository;
 
+    @Mock
+    private WorkOrderRepository workOrderRepository;
+
     @InjectMocks
     private OrderService service;
 
     @Test
     void createsAggregateWithNormalizedNameAndLinkedDetails() {
         ArticleJpa article = article(7L);
+        when(workOrderRepository.findById(3L)).thenReturn(java.util.Optional.of(workOrder(3L)));
         when(articleRepository.findAllById(any())).thenReturn(List.of(article));
         when(orderRepository.save(org.mockito.ArgumentMatchers.any(OrderJpa.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -39,6 +45,7 @@ class OrderServiceTest {
         OrderJpa created = service.create(draft(List.of(new OrderDraft.Detail(7L, 3))));
 
         assertThat(created.getName()).isEqualTo("Ordine urgente");
+        assertThat(created.getWorkOrder().getId()).isEqualTo(3L);
         assertThat(created.getDetails()).hasSize(1);
         assertThat(created.getDetails().getFirst().getOrder()).isSameAs(created);
         assertThat(created.getDetails().getFirst().getArticle()).isSameAs(article);
@@ -71,6 +78,7 @@ class OrderServiceTest {
     @Test
     void rejectsUnknownArticle() {
         when(articleRepository.findAllById(any())).thenReturn(List.of());
+        when(workOrderRepository.findById(3L)).thenReturn(java.util.Optional.of(workOrder(3L)));
 
         assertThatThrownBy(() -> service.create(draft(List.of(new OrderDraft.Detail(7L, 1)))))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -89,11 +97,18 @@ class OrderServiceTest {
 
     private OrderDraft draft(List<OrderDraft.Detail> details) {
         return new OrderDraft(
-                "  Ordine   urgente ",
+                3L,
                 LocalDate.of(2026, 9, 5),
                 OrderPriority.HIGH,
                 OrderStatus.DRAFT,
                 details);
+    }
+
+    private WorkOrderJpa workOrder(Long id) {
+        WorkOrderJpa workOrder = new WorkOrderJpa();
+        workOrder.setId(id);
+        workOrder.setName("Ordine urgente");
+        return workOrder;
     }
 
     private ArticleJpa article(Long id) {

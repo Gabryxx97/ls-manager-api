@@ -4,7 +4,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 public record OrderDraft(
-        String name,
+        Long workOrderId,
         LocalDate date,
         OrderPriority priority,
         OrderStatus status,

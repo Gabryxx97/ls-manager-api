@@ -2,6 +2,8 @@ package it.lsimpresa.manager.order;
 
 import it.lsimpresa.manager.article.ArticleJpa;
 import it.lsimpresa.manager.article.ArticleRepository;
+import it.lsimpresa.manager.workorder.WorkOrderJpa;
+import it.lsimpresa.manager.workorder.WorkOrderRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,12 +31,16 @@ class OrderModelIntegrationTests {
     private ArticleRepository articleRepository;
 
     @Autowired
+    private WorkOrderRepository workOrderRepository;
+
+    @Autowired
     private EntityManager entityManager;
 
     @Test
     void persistsEnumValuesAndCascadesOrderDetails() {
         ArticleJpa article = articleRepository.save(article("Bullone"));
-        OrderJpa order = orderService.create(draft(article.getId(), 4));
+        WorkOrderJpa workOrder = workOrderRepository.save(workOrder("Ordine test"));
+        OrderJpa order = orderService.create(draft(workOrder.getId(), article.getId(), 4));
         entityManager.flush();
         entityManager.clear();
 
@@ -61,11 +67,13 @@ class OrderModelIntegrationTests {
     void updateReplacesOldDetailsThroughOrphanRemoval() {
         ArticleJpa first = articleRepository.save(article("Bullone"));
         ArticleJpa second = articleRepository.save(article("Dado"));
-        OrderJpa order = orderService.create(draft(first.getId(), 2));
+        WorkOrderJpa firstWorkOrder = workOrderRepository.save(workOrder("Ordine test"));
+        WorkOrderJpa secondWorkOrder = workOrderRepository.save(workOrder("Ordine aggiornato"));
+        OrderJpa order = orderService.create(draft(firstWorkOrder.getId(), first.getId(), 2));
         entityManager.flush();
 
         OrderDraft update = new OrderDraft(
-                "Ordine aggiornato",
+                secondWorkOrder.getId(),
                 LocalDate.of(2026, 9, 6),
                 OrderPriority.STANDARD,
                 OrderStatus.COMPLETED,
@@ -81,13 +89,19 @@ class OrderModelIntegrationTests {
         });
     }
 
-    private OrderDraft draft(Long articleId, int quantity) {
+    private OrderDraft draft(Long workOrderId, Long articleId, int quantity) {
         return new OrderDraft(
-                "Ordine test",
+                workOrderId,
                 LocalDate.of(2026, 9, 5),
                 OrderPriority.HIGH,
                 OrderStatus.PROCESSING,
                 List.of(new OrderDraft.Detail(articleId, quantity)));
+    }
+
+    private WorkOrderJpa workOrder(String name) {
+        WorkOrderJpa workOrder = new WorkOrderJpa();
+        workOrder.setName(name);
+        return workOrder;
     }
 
     private ArticleJpa article(String name) {
