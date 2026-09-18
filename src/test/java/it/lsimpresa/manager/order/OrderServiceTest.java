@@ -114,7 +114,9 @@ class OrderServiceTest {
     private ArticleJpa article(Long id) {
         ArticleJpa article = new ArticleJpa();
         article.setId(id);
-        article.setName("Articolo");
+        article.setSku("ARTICOLO");
+        article.setDescription("Articolo");
+        article.setUnitPrice(new java.math.BigDecimal("1.00"));
         return article;
     }
 }

@@ -6,6 +6,7 @@ import lombok.Data;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.math.BigDecimal;
 
 public final class ArticleImportDto {
 
@@ -24,8 +25,14 @@ public final class ArticleImportDto {
     public static class Item {
 
         private Integer rowNumber;
-        private String name;
+        private String sku;
         private String description;
+        private String category;
+        private String costCenter;
+        private String unitOfMeasure;
+        private String location;
+        private BigDecimal stockQuantity;
+        private BigDecimal unitPrice;
     }
 
     @Data
@@ -33,6 +40,7 @@ public final class ArticleImportDto {
 
         private int received;
         private int created;
+        private int updated;
         private int failed;
         private List<Error> errors = new ArrayList<>();
     }

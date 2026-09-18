@@ -12,8 +12,14 @@ public class ArticleMapper implements DtoMapper<ArticleDto, ArticleJpa> {
         if (entity == null) return null;
         ArticleDto dto = new ArticleDto();
         dto.setId(entity.getId());
-        dto.setName(entity.getName());
+        dto.setSku(entity.getSku());
         dto.setDescription(entity.getDescription());
+        dto.setCategory(entity.getCategory());
+        dto.setCostCenter(entity.getCostCenter());
+        dto.setUnitOfMeasure(entity.getUnitOfMeasure());
+        dto.setLocation(entity.getLocation());
+        dto.setStockQuantity(entity.getStockQuantity());
+        dto.setUnitPrice(entity.getUnitPrice());
         return dto;
     }
 

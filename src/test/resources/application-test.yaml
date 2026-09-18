@@ -10,6 +10,8 @@ spring:
     show-sql: false
     database: h2
     database-platform: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false
 
 app:
   jwt:

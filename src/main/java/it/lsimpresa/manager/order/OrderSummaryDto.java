@@ -11,4 +11,5 @@ public class OrderSummaryDto {
     private LocalDate date;
     private OrderPriority priority;
     private OrderStatus status;
+    private OrderCategory category;
 }

@@ -3,6 +3,7 @@ package it.lsimpresa.manager.order;
 import lombok.Data;
 import java.time.LocalDate;
 import java.util.List;
+import java.math.BigDecimal;
 
 @Data
 public class OrderDto {
@@ -12,14 +13,19 @@ public class OrderDto {
     private LocalDate date;
     private OrderPriority priority;
     private OrderStatus status;
+    private OrderCategory category;
+    private String notes;
     private List<Detail> details;
+    private BigDecimal netTotal;
 
     @Data
     public static class Detail {
         private Long id;
         private Long articleId;
-        private String articleName;
         private String articleDescription;
         private Integer quantity;
+        private String articleSku;
+        private BigDecimal unitPrice;
+        private BigDecimal subtotal;
     }
 }

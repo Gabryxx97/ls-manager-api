@@ -33,7 +33,9 @@ public class ArticleController extends SearchControllerBase {
     private static final Map<String, Set<String>> ALLOWED_FILTERS = Map.of(
             "id", Set.of("EQUAL", "IN"),
             "search", Set.of("ILIKE"));
-    private static final Set<String> ALLOWED_SORTS = Set.of("id", "name", "description");
+    private static final Set<String> ALLOWED_SORTS = Set.of(
+            "id", "sku", "description", "category", "costCenter", "unitOfMeasure",
+            "location", "stockQuantity", "unitPrice");
 
     private final ISearchService searchService;
     private final ArticleMapper articleMapper;

@@ -106,8 +106,9 @@ class OrderModelIntegrationTests {
 
     private ArticleJpa article(String name) {
         ArticleJpa article = new ArticleJpa();
-        article.setName(name);
+        article.setSku(name.toUpperCase());
         article.setDescription("Descrizione");
+        article.setUnitPrice(new java.math.BigDecimal("1.00"));
         return article;
     }
 }

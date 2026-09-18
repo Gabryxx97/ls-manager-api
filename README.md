@@ -27,7 +27,9 @@ automaticamente `.env` sia quando l'applicazione viene avviata dalla directory
 Se la directory di lavoro dell'IDE è diversa, impostare `ENV_FILE` con il
 percorso assoluto del file `.env`.
 
-Lo schema di sviluppo viene aggiornato automaticamente tramite
+Le migrazioni Flyway vengono applicate automaticamente all'avvio. La prima
+migrazione usa il baseline `0` per supportare sia database esistenti sia nuovi;
+Hibernate continua temporaneamente a completare lo schema tramite
 `spring.jpa.hibernate.ddl-auto=update`.
 
 ## Test

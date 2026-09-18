@@ -23,6 +23,11 @@ public class OrderRequestDto {
     @NotNull(message = "Lo stato è obbligatorio")
     private OrderStatus status;
 
+    private OrderCategory category;
+
+    @jakarta.validation.constraints.Size(max = 2000, message = "Le note non possono superare 2.000 caratteri")
+    private String notes;
+
     @NotEmpty(message = "L'ordine deve contenere almeno una riga")
     private List<@Valid Detail> details;
 

@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.math.BigDecimal;
 
 @Service
 @RequiredArgsConstructor
@@ -80,10 +81,22 @@ public class OrderService {
         }
 
         List<OrderDetailJpa> details = new ArrayList<>();
+        Map<Long, BigDecimal> historicalPrices = new java.util.HashMap<>();
+        order.getDetails().forEach(detail -> {
+            if (detail.getArticle() != null && detail.getArticle().getId() != null) {
+                historicalPrices.put(detail.getArticle().getId(), detail.getUnitPrice());
+            }
+        });
         quantities.forEach((articleId, quantity) -> {
             OrderDetailJpa detail = new OrderDetailJpa();
             detail.setArticle(articles.get(articleId));
             detail.setQuantity(quantity);
+            BigDecimal historical = historicalPrices.get(articleId);
+            BigDecimal price = historical != null ? historical : articles.get(articleId).getUnitPrice();
+            if (price == null) {
+                throw new IllegalArgumentException("Uno o più articoli non hanno un prezzo unitario");
+            }
+            detail.setUnitPrice(price);
             details.add(detail);
         });
 
@@ -92,7 +105,14 @@ public class OrderService {
         order.setDate(draft.date());
         order.setPriority(draft.priority());
         order.setStatus(draft.status());
+        order.setCategory(draft.category() == null ? OrderCategory.HYDRAULIC_HVAC : draft.category());
+        order.setNotes(normalizeNotes(draft.notes()));
         order.replaceDetails(details);
+    }
+
+    private String normalizeNotes(String notes) {
+        if (notes == null || notes.isBlank()) return null;
+        return notes.trim();
     }
 
     private Map<Long, Integer> validateAndCollectDetails(List<OrderDraft.Detail> details) {

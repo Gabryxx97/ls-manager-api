@@ -4,6 +4,7 @@ import it.lsimpresa.manager.article.ArticleJpa;
 import it.lsimpresa.manager.utils.DtoMapper;
 import org.springframework.stereotype.Component;
 import java.util.List;
+import java.math.BigDecimal;
 
 @Component
 public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
@@ -15,6 +16,7 @@ public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
         dto.setDate(entity.getDate());
         dto.setPriority(entity.getPriority());
         dto.setStatus(entity.getStatus());
+        dto.setCategory(entity.getCategory());
         return dto;
     }
 
@@ -26,7 +28,14 @@ public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
         dto.setDate(entity.getDate());
         dto.setPriority(entity.getPriority());
         dto.setStatus(entity.getStatus());
+        dto.setCategory(entity.getCategory());
+        dto.setNotes(entity.getNotes());
         dto.setDetails(entity.getDetails().stream().map(this::toDetail).toList());
+        if (entity.getDetails().stream().allMatch(detail -> detail.getUnitPrice() != null)) {
+            dto.setNetTotal(entity.getDetails().stream()
+                    .map(detail -> detail.getUnitPrice().multiply(BigDecimal.valueOf(detail.getQuantity())))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2));
+        }
         return dto;
     }
 
@@ -35,7 +44,7 @@ public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
                 .map(detail -> new OrderDraft.Detail(detail.getArticleId(), detail.getQuantity()))
                 .toList();
         return new OrderDraft(request.getWorkOrderId(), request.getDate(), request.getPriority(),
-                request.getStatus(), details);
+                request.getStatus(), request.getCategory(), request.getNotes(), details);
     }
 
     @Override
@@ -48,9 +57,13 @@ public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
         OrderDto.Detail dto = new OrderDto.Detail();
         dto.setId(entity.getId());
         dto.setArticleId(article.getId());
-        dto.setArticleName(article.getName());
+        dto.setArticleSku(article.getSku());
         dto.setArticleDescription(article.getDescription());
         dto.setQuantity(entity.getQuantity());
+        dto.setUnitPrice(entity.getUnitPrice());
+        if (entity.getUnitPrice() != null) {
+            dto.setSubtotal(entity.getUnitPrice().multiply(BigDecimal.valueOf(entity.getQuantity())).setScale(2));
+        }
         return dto;
     }
 }

@@ -11,6 +11,8 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 @Data
 @Entity
 @Table(name = "article")
@@ -20,11 +22,29 @@ public class ArticleJpa implements Searchable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "name", nullable = false, length = 255)
-    private String name;
+    @Column(name = "sku", nullable = false, length = 64)
+    private String sku;
 
-    @Column(name = "description", columnDefinition = "text")
+    @Column(name = "unit_price", precision = 12, scale = 2)
+    private BigDecimal unitPrice;
+
+    @Column(name = "description", nullable = false, columnDefinition = "text")
     private String description;
+
+    @Column(name = "category", length = 64)
+    private String category;
+
+    @Column(name = "cost_center", length = 128)
+    private String costCenter;
+
+    @Column(name = "unit_of_measure", length = 16)
+    private String unitOfMeasure;
+
+    @Column(name = "location", length = 255)
+    private String location;
+
+    @Column(name = "stock_quantity", precision = 14, scale = 2)
+    private BigDecimal stockQuantity;
 
     @Column(name = "search", nullable = false, columnDefinition = "text")
     private String search;
@@ -33,7 +53,11 @@ public class ArticleJpa implements Searchable {
     @PrePersist
     @PreUpdate
     public void searchFill() {
-        search = String.join(" ", name == null ? "" : name,
-                description == null ? "" : description).trim();
+        search = String.join(" ", sku == null ? "" : sku,
+                description == null ? "" : description,
+                category == null ? "" : category,
+                costCenter == null ? "" : costCenter,
+                unitOfMeasure == null ? "" : unitOfMeasure,
+                location == null ? "" : location).trim().replaceAll("\\s+", " ");
     }
 }

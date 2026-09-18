@@ -83,7 +83,6 @@ class OrderApiIntegrationTests {
                 .andExpect(jsonPath("$.priority").value("HIGH"))
                 .andExpect(jsonPath("$.status").value("DRAFT"))
                 .andExpect(jsonPath("$.details[0].articleId").value(article.getId()))
-                .andExpect(jsonPath("$.details[0].articleName").value("Bullone M8"))
                 .andExpect(jsonPath("$.details[0].articleDescription").value("Zincato"))
                 .andExpect(jsonPath("$.details[0].quantity").value(3))
                 .andReturn().getResponse().getContentAsString();
@@ -107,7 +106,7 @@ class OrderApiIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(orderId))
                 .andExpect(jsonPath("$.details.length()").value(1))
-                .andExpect(jsonPath("$.details[0].articleName").value("Dado M8"));
+                .andExpect(jsonPath("$.details[0].articleDescription").value("Dado M8"));
     }
 
     @Test
@@ -215,6 +214,22 @@ class OrderApiIntegrationTests {
     }
 
     @Test
+    void articleWithoutPriceCannotBeAddedToAnOrder() throws Exception {
+        ArticleJpa article = saveArticle("Senza prezzo", "Da valorizzare");
+        article.setUnitPrice(null);
+        articleRepository.saveAndFlush(article);
+        WorkOrderJpa workOrder = saveWorkOrder("Ordine senza prezzo");
+
+        mockMvc.perform(post("/api/orders").with(role("USER_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(orderJson(workOrder.getId(), "2026-09-05", "LOW",
+                                "DRAFT", article.getId(), 1)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail")
+                        .value("Uno o più articoli non hanno un prezzo unitario"));
+    }
+
+    @Test
     void listSupportsSearchEnumDateFiltersSortingAndPagination() throws Exception {
         ArticleJpa article = saveArticle("Articolo", null);
         createOrder(article.getId());
@@ -295,8 +310,9 @@ class OrderApiIntegrationTests {
 
     private ArticleJpa saveArticle(String name, String description) {
         ArticleJpa article = new ArticleJpa();
-        article.setName(name);
-        article.setDescription(description);
+        article.setSku(name.toUpperCase().replaceAll("\\s+", "-"));
+        article.setDescription(description == null ? name : description);
+        article.setUnitPrice(new java.math.BigDecimal("1.00"));
         return articleRepository.saveAndFlush(article);
     }
 

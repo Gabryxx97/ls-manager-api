@@ -116,7 +116,9 @@ class WorkOrderApiIntegrationTests {
     void renamePropagatesToEveryLinkedOrderAndReferencedDeleteConflicts() throws Exception {
         long workOrderId = createWorkOrder("Commessa iniziale", null, "ADMIN_ROLE");
         ArticleJpa article = new ArticleJpa();
-        article.setName("Articolo");
+        article.setSku("ARTICOLO");
+        article.setDescription("Articolo");
+        article.setUnitPrice(new java.math.BigDecimal("1.00"));
         article = articleRepository.saveAndFlush(article);
 
         long firstOrder = createOrder(workOrderId, article.getId());

@@ -18,6 +18,8 @@ import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.Check;
 
+import java.math.BigDecimal;
+
 @Getter
 @Setter
 @Entity
@@ -53,4 +55,7 @@ public class OrderDetailJpa {
     @Positive
     @Column(name = "quantity", nullable = false)
     private Integer quantity;
+
+    @Column(name = "unit_price", precision = 12, scale = 2)
+    private BigDecimal unitPrice;
 }

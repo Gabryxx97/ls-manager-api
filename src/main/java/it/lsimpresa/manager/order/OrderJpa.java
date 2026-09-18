@@ -61,6 +61,13 @@ public class OrderJpa implements Searchable {
     @Column(name = "status", nullable = false, length = 32)
     private OrderStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category", length = 64)
+    private OrderCategory category;
+
+    @Column(name = "notes", columnDefinition = "text")
+    private String notes;
+
     @Column(name = "search", nullable = false, columnDefinition = "text")
     private String search;
 
