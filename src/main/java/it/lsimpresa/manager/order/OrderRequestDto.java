@@ -20,9 +20,7 @@ public class OrderRequestDto {
     @NotNull(message = "La priorità è obbligatoria")
     private OrderPriority priority;
 
-    @NotNull(message = "Lo stato è obbligatorio")
-    private OrderStatus status;
-
+    @NotNull(message = "La categoria è obbligatoria")
     private OrderCategory category;
 
     @jakarta.validation.constraints.Size(max = 2000, message = "Le note non possono superare 2.000 caratteri")

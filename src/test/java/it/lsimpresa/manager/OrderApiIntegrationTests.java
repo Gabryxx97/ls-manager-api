@@ -19,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -98,7 +99,7 @@ class OrderApiIntegrationTests {
         String location = mockMvc.perform(post("/api/orders")
                         .with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(orderJson(workOrder.getId(), "2026-09-05", "LOW", "DRAFT", article.getId(), 1)))
+                        .content(orderJson(workOrder.getId(), "2099-09-05", "LOW", "DRAFT", article.getId(), 1)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getHeader("Location");
         long orderId = Long.parseLong(location.substring(location.lastIndexOf('/') + 1));
@@ -111,10 +112,81 @@ class OrderApiIntegrationTests {
                 .andExpect(status().isForbidden());
         mockMvc.perform(put("/api/orders/{id}", orderId).with(role("other-user", "OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(orderJson(workOrder.getId(), "2026-09-06", "HIGH", "PROCESSING", article.getId(), 2)))
+                        .content(orderJson(workOrder.getId(), "2099-09-06", "HIGH", "PROCESSING", article.getId(), 2)))
                 .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/orders/{id}", orderId).with(role("WAREHOUSE_ROLE")))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void warehouseCanClaimAnAvailableOrderOnlyOnce() throws Exception {
+        ArticleJpa article = saveArticle("Articolo presa in carico", null);
+        long orderId = createAssignableOrder(article.getId());
+        saveWarehouse("warehouse-claim");
+        saveWarehouse("warehouse-second");
+
+        mockMvc.perform(post("/api/orders/{id}/claim", orderId)
+                        .with(role("warehouse-claim", "WAREHOUSE_ROLE")).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.assignedWarehouseName").value("warehouse-claim"));
+
+        mockMvc.perform(post("/api/orders/{id}/claim", orderId)
+                        .with(role("warehouse-second", "WAREHOUSE_ROLE")).with(csrf()))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void adminCanAssignReassignAndRevokeWarehouse() throws Exception {
+        ArticleJpa article = saveArticle("Articolo assegnazione", null);
+        long orderId = createAssignableOrder(article.getId());
+        UserJpa first = saveWarehouse("warehouse-first");
+        UserJpa second = saveWarehouse("warehouse-second-admin");
+
+        mockMvc.perform(put("/api/orders/{id}/assignee", orderId)
+                        .with(role("ADMIN_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"warehouseUserId\":%d}".formatted(first.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.assignedWarehouseId").value(first.getId()));
+
+        mockMvc.perform(put("/api/orders/{id}/assignee", orderId)
+                        .with(role("ADMIN_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"warehouseUserId\":%d}".formatted(second.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.assignedWarehouseId").value(second.getId()));
+
+        mockMvc.perform(delete("/api/orders/{id}/assignee", orderId)
+                        .with(role("ADMIN_ROLE")).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.assignedWarehouseId").doesNotExist());
+    }
+
+    @Test
+    void assignmentRejectsClosedOrdersAndUnauthorizedRoles() throws Exception {
+        ArticleJpa article = saveArticle("Articolo chiuso", null);
+        long closedOrder = createOrder("Ordine chiuso", LocalDate.now().plusDays(1).toString(), "LOW", "COMPLETED", article.getId());
+        OrderJpa closed = orderRepository.findById(closedOrder).orElseThrow();
+        closed.setStatus(it.lsimpresa.manager.order.OrderStatus.COMPLETED);
+        orderRepository.saveAndFlush(closed);
+        UserJpa warehouse = saveWarehouse("warehouse-closed");
+
+        mockMvc.perform(post("/api/orders/{id}/claim", closedOrder)
+                        .with(role("warehouse-closed", "WAREHOUSE_ROLE")).with(csrf()))
+                .andExpect(status().isConflict());
+        mockMvc.perform(put("/api/orders/{id}/assignee", closedOrder)
+                        .with(role("ADMIN_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"warehouseUserId\":%d}".formatted(warehouse.getId())))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/orders/{id}/claim", closedOrder)
+                        .with(role("OPERATOR_ROLE")).with(csrf()))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/orders/{id}/assignee", closedOrder)
+                        .with(role("WAREHOUSE_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"warehouseUserId\":%d}".formatted(warehouse.getId())))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -125,15 +197,17 @@ class OrderApiIntegrationTests {
         String response = mockMvc.perform(post("/api/orders")
                         .with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(orderJson(workOrder.getId(), "2026-09-05", "HIGH",
+                        .content(orderJson(workOrder.getId(), "2099-09-05", "HIGH",
                                 "DRAFT", article.getId(), 3)))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", org.hamcrest.Matchers.matchesPattern("/api/orders/\\d+")))
                 .andExpect(jsonPath("$.name").value("Ordine urgente"))
                 .andExpect(jsonPath("$.workOrderId").value(workOrder.getId()))
-                .andExpect(jsonPath("$.date").value("2026-09-05"))
+                .andExpect(jsonPath("$.date").value("2099-09-05"))
                 .andExpect(jsonPath("$.priority").value("HIGH"))
-                .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.status").value("PROCESSING"))
+                .andExpect(jsonPath("$.details[0].status").value("TO_PICK"))
+                .andExpect(jsonPath("$.details[0].pickedQuantity").value(0))
                 .andExpect(jsonPath("$.details[0].articleId").value(article.getId()))
                 .andExpect(jsonPath("$.details[0].articleDescription").value("Zincato"))
                 .andExpect(jsonPath("$.details[0].quantity").value(3))
@@ -147,6 +221,28 @@ class OrderApiIntegrationTests {
                 .andExpect(header().string("Content-Range", "items 0-0/1"))
                 .andExpect(jsonPath("$[0].name").value("Ordine urgente"))
                 .andExpect(jsonPath("$[0].details").doesNotExist());
+    }
+
+    @Test
+    void creationDateRequiresTwoDaysForNonAdminAndAllowsTomorrowForAdmin() throws Exception {
+        ArticleJpa article = saveArticle("Articolo data", null);
+        WorkOrderJpa operatorWorkOrder = saveWorkOrder("Ordine operatore");
+        WorkOrderJpa adminWorkOrder = saveWorkOrder("Ordine admin");
+        String tomorrow = LocalDate.now(java.time.ZoneId.of("Europe/Rome")).plusDays(1).toString();
+
+        mockMvc.perform(post("/api/orders")
+                        .with(role("OPERATOR_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(orderJson(operatorWorkOrder.getId(), tomorrow, "LOW", "DRAFT", article.getId(), 1)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("La data dell'ordine deve essere almeno dopodomani"));
+
+        mockMvc.perform(post("/api/orders")
+                        .with(role("ADMIN_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(orderJson(adminWorkOrder.getId(), tomorrow, "LOW", "DRAFT", article.getId(), 1)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.date").value(tomorrow));
     }
 
     @Test
@@ -171,7 +267,7 @@ class OrderApiIntegrationTests {
         mockMvc.perform(put("/api/orders/{id}", orderId)
                         .with(role("ADMIN_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(orderJson(updatedWorkOrder.getId(), "2026-09-06", "STANDARD",
+                        .content(orderJson(updatedWorkOrder.getId(), "2099-09-06", "STANDARD",
                                 "COMPLETED", newArticle.getId(), 9)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.details.length()").value(1))
@@ -192,7 +288,7 @@ class OrderApiIntegrationTests {
         mockMvc.perform(put("/api/orders/{id}", orderId)
                         .with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(orderJson(otherWorkOrder.getId(), "2026-09-08", "LOW",
+                        .content(orderJson(otherWorkOrder.getId(), "2099-09-08", "LOW",
                                 "SHIPPED", 999999L, 7)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("Uno o più articoli non esistono"));
@@ -214,7 +310,7 @@ class OrderApiIntegrationTests {
                         .with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"workOrderId":%d,"date":"2026-09-05","priority":"LOW",
+                                {"workOrderId":%d,"date":"2099-09-05","priority":"LOW",
                                  "status":"DRAFT","details":[]}
                                 """.formatted(emptyWorkOrder.getId())))
                 .andExpect(status().isBadRequest())
@@ -224,7 +320,7 @@ class OrderApiIntegrationTests {
         mockMvc.perform(post("/api/orders")
                         .with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(orderJson(quantityWorkOrder.getId(), "2026-09-05", "LOW",
+                        .content(orderJson(quantityWorkOrder.getId(), "2099-09-05", "LOW",
                                 "DRAFT", article.getId(), 0)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors['details[0].quantity']")
@@ -234,8 +330,8 @@ class OrderApiIntegrationTests {
                         .with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(("""
-                                {"workOrderId":%d,"date":"2026-09-05","priority":"LOW",
-                                 "status":"DRAFT","details":[
+                                {"workOrderId":%d,"date":"2099-09-05","priority":"LOW",
+                                 "status":"DRAFT","category":"HYDRAULIC","details":[
                                    {"articleId":%d,"quantity":1},
                                    {"articleId":%d,"quantity":2}
                                  ]}
@@ -252,7 +348,7 @@ class OrderApiIntegrationTests {
         mockMvc.perform(post("/api/orders").with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"date":"2026-09-05","priority":"LOW","status":"DRAFT",
+                                {"date":"2099-09-05","priority":"LOW","status":"DRAFT",
                                  "details":[{"articleId":%d,"quantity":1}]}
                                 """.formatted(article.getId())))
                 .andExpect(status().isBadRequest())
@@ -260,9 +356,24 @@ class OrderApiIntegrationTests {
 
         mockMvc.perform(post("/api/orders").with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(orderJson(999999L, "2026-09-05", "LOW", "DRAFT", article.getId(), 1)))
+                        .content(orderJson(999999L, "2099-09-05", "LOW", "DRAFT", article.getId(), 1)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("La commessa non esiste"));
+    }
+
+    @Test
+    void categoryIsRequired() throws Exception {
+        ArticleJpa article = saveArticle("Articolo", null);
+        WorkOrderJpa workOrder = saveWorkOrder("Senza categoria");
+
+        mockMvc.perform(post("/api/orders").with(role("OPERATOR_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(("""
+                                {"workOrderId":%d,"date":"2099-09-05","priority":"LOW",
+                                 "status":"DRAFT","details":[{"articleId":%d,"quantity":1}]}
+                                """).formatted(workOrder.getId(), article.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.category").value("La categoria è obbligatoria"));
     }
 
     @Test
@@ -274,7 +385,7 @@ class OrderApiIntegrationTests {
 
         mockMvc.perform(post("/api/orders").with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(orderJson(workOrder.getId(), "2026-09-05", "LOW",
+                        .content(orderJson(workOrder.getId(), "2099-09-05", "LOW",
                                 "DRAFT", article.getId(), 1)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail")
@@ -285,7 +396,10 @@ class OrderApiIntegrationTests {
     void listSupportsSearchEnumDateFiltersSortingAndPagination() throws Exception {
         ArticleJpa article = saveArticle("Articolo", null);
         createOrder(article.getId());
-        createOrder("Zeta spedito", "2026-09-10", "LOW", "SHIPPED", article.getId());
+        long completedId = createOrder("Zeta completato", "2099-09-10", "LOW", "COMPLETED", article.getId());
+        OrderJpa completed = orderRepository.findById(completedId).orElseThrow();
+        completed.setStatus(it.lsimpresa.manager.order.OrderStatus.COMPLETED);
+        orderRepository.saveAndFlush(completed);
 
         mockMvc.perform(get("/api/orders")
                         .param("page", "1").param("pageSize", "1")
@@ -298,17 +412,17 @@ class OrderApiIntegrationTests {
 
         mockMvc.perform(get("/api/orders")
                         .param("page", "1").param("pageSize", "10")
-                        .param("filter", "{\"date\":{\"operator\":\"GTE\",\"values\":[\"2026-09-09\"]}}")
+                        .param("filter", "{\"date\":{\"operator\":\"GTE\",\"values\":[\"2099-09-09\"]}}")
                         .with(role("ADMIN_ROLE")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].name").value("Zeta spedito"));
+                .andExpect(jsonPath("$[0].name").value("Zeta completato"));
 
         mockMvc.perform(get("/api/orders")
                         .param("page", "1").param("pageSize", "10")
-                        .param("filter", "{\"search\":{\"operator\":\"ILIKE\",\"values\":[\"SPEDITO\"]}}")
+                        .param("filter", "{\"search\":{\"operator\":\"ILIKE\",\"values\":[\"COMPLETATO\"]}}")
                         .with(role("ADMIN_ROLE")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].status").value("SHIPPED"));
+                .andExpect(jsonPath("$[0].status").value("COMPLETED"));
     }
 
     @Test
@@ -330,8 +444,124 @@ class OrderApiIntegrationTests {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void assignedWarehouseCanWorkPartialQuantityPurchaseResumeAndComplete() throws Exception {
+        ArticleJpa article = saveArticle("Articolo workflow", null);
+        article.setStockQuantity(new java.math.BigDecimal("25.00"));
+        articleRepository.saveAndFlush(article);
+        long orderId = createAssignableOrder(article.getId());
+        UserJpa warehouse = saveWarehouse("warehouse-workflow");
+
+        mockMvc.perform(post("/api/orders/{id}/claim", orderId)
+                        .with(role(warehouse.getUsername(), "WAREHOUSE_ROLE")).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.takenInChargeAt").exists());
+
+        Long detailId = orderRepository.findDetailedById(orderId).orElseThrow()
+                .getDetails().getFirst().getId();
+
+        mockMvc.perform(put("/api/orders/{orderId}/details/{detailId}/picked-quantity", orderId, detailId)
+                        .with(role(warehouse.getUsername(), "WAREHOUSE_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"pickedQuantity\":1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.details[0].status").value("TO_PICK"))
+                .andExpect(jsonPath("$.details[0].remainingQuantity").value(1));
+
+        mockMvc.perform(post("/api/orders/{orderId}/details/{detailId}/to-purchase", orderId, detailId)
+                        .with(role(warehouse.getUsername(), "WAREHOUSE_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"pickedQuantity\":1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.details[0].status").value("TO_PURCHASE"));
+
+        mockMvc.perform(post("/api/orders/{id}/complete", orderId)
+                        .with(role(warehouse.getUsername(), "WAREHOUSE_ROLE")).with(csrf()))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/api/orders/{orderId}/details/{detailId}/resume-picking", orderId, detailId)
+                        .with(role(warehouse.getUsername(), "WAREHOUSE_ROLE")).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.details[0].status").value("TO_PICK"));
+
+        mockMvc.perform(put("/api/orders/{orderId}/details/{detailId}/picked-quantity", orderId, detailId)
+                        .with(role(warehouse.getUsername(), "WAREHOUSE_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"pickedQuantity\":2}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.details[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.details[0].remainingQuantity").value(0));
+
+        mockMvc.perform(put("/api/orders/{orderId}/details/{detailId}/picked-quantity", orderId, detailId)
+                        .with(role(warehouse.getUsername(), "WAREHOUSE_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"pickedQuantity\":1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.details[0].status").value("TO_PICK"));
+
+        mockMvc.perform(put("/api/orders/{orderId}/details/{detailId}/picked-quantity", orderId, detailId)
+                        .with(role(warehouse.getUsername(), "WAREHOUSE_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"pickedQuantity\":2}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.details[0].status").value("COMPLETED"));
+
+        mockMvc.perform(post("/api/orders/{id}/complete", orderId)
+                        .with(role(warehouse.getUsername(), "WAREHOUSE_ROLE")).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+
+        assertThat(articleRepository.findById(article.getId()).orElseThrow().getStockQuantity())
+                .isEqualByComparingTo("25.00");
+    }
+
+    @Test
+    void workflowRejectsOtherWarehouseAndLocksStructureAfterRevocation() throws Exception {
+        ArticleJpa article = saveArticle("Articolo protetto", null);
+        long orderId = createAssignableOrder(article.getId());
+        UserJpa assigned = saveWarehouse("warehouse-assigned");
+        UserJpa other = saveWarehouse("warehouse-other");
+
+        mockMvc.perform(post("/api/orders/{id}/claim", orderId)
+                        .with(role(assigned.getUsername(), "WAREHOUSE_ROLE")).with(csrf()))
+                .andExpect(status().isOk());
+        Long detailId = orderRepository.findDetailedById(orderId).orElseThrow()
+                .getDetails().getFirst().getId();
+
+        mockMvc.perform(put("/api/orders/{orderId}/details/{detailId}/picked-quantity", orderId, detailId)
+                        .with(role(other.getUsername(), "WAREHOUSE_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"pickedQuantity\":1}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(delete("/api/orders/{id}/assignee", orderId)
+                        .with(role("ADMIN_ROLE")).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.takenInChargeAt").exists());
+
+        WorkOrderJpa replacement = saveWorkOrder("Non modificabile");
+        mockMvc.perform(put("/api/orders/{id}", orderId)
+                        .with(role("ADMIN_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(orderJson(replacement.getId(), "2099-10-01", "LOW", "PROCESSING", article.getId(), 1)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(delete("/api/orders/{id}", orderId)
+                        .with(role("ADMIN_ROLE")).with(csrf()))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/api/orders/{id}/claim", orderId)
+                        .with(role(other.getUsername(), "WAREHOUSE_ROLE")).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.assignedWarehouseId").value(other.getId()));
+    }
+
     private long createOrder(Long articleId) throws Exception {
-        return createOrder("Ordine test", "2026-09-05", "HIGH", "PROCESSING", articleId);
+        return createOrder("Ordine test", "2099-09-05", "HIGH", "PROCESSING", articleId);
+    }
+
+    private long createAssignableOrder(Long articleId) throws Exception {
+        return createOrder("Ordine assegnabile", LocalDate.now().plusDays(1).toString(),
+                "HIGH", "PROCESSING", articleId);
     }
 
     private long createOrder(String name, String date, String priority,
@@ -349,7 +579,7 @@ class OrderApiIntegrationTests {
     private String orderJson(Long workOrderId, String date, String priority,
                              String status, Long articleId, int quantity) {
         return ("""
-                {"workOrderId":%d,"name":"nome ignorato","date":"%s","priority":"%s","status":"%s",
+                {"workOrderId":%d,"name":"nome ignorato","date":"%s","priority":"%s","status":"%s","category":"HYDRAULIC",
                  "details":[{"articleId":%d,"quantity":%d}]}
                 """).formatted(workOrderId, date, priority, status, articleId, quantity);
     }
@@ -366,6 +596,15 @@ class OrderApiIntegrationTests {
         article.setDescription(description == null ? name : description);
         article.setUnitPrice(new java.math.BigDecimal("1.00"));
         return articleRepository.saveAndFlush(article);
+    }
+
+    private UserJpa saveWarehouse(String username) {
+        UserJpa warehouse = new UserJpa();
+        warehouse.setUsername(username);
+        warehouse.setPassword("test-password");
+        warehouse.setRole(UserRole.WAREHOUSE_ROLE);
+        warehouse.setAccountActive(true);
+        return userRepository.saveAndFlush(warehouse);
     }
 
     private org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.UserRequestPostProcessor role(String role) {

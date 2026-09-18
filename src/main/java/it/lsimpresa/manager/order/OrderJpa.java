@@ -27,6 +27,7 @@ import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -64,8 +65,9 @@ public class OrderJpa implements Searchable {
     @Column(name = "status", nullable = false, length = 32)
     private OrderStatus status;
 
+    @NotNull
     @Enumerated(EnumType.STRING)
-    @Column(name = "category", length = 64)
+    @Column(name = "category", nullable = false, length = 64)
     private OrderCategory category;
 
     @Column(name = "notes", columnDefinition = "text")
@@ -75,6 +77,14 @@ public class OrderJpa implements Searchable {
     @JoinColumn(name = "created_by_id")
     @OnDelete(action = OnDeleteAction.SET_NULL)
     private UserJpa createdBy;
+
+    @ManyToOne(fetch = jakarta.persistence.FetchType.LAZY)
+    @JoinColumn(name = "assigned_warehouse_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
+    private UserJpa assignedWarehouse;
+
+    @Column(name = "taken_in_charge_at")
+    private Instant takenInChargeAt;
 
     @Column(name = "search", nullable = false, columnDefinition = "text")
     private String search;
@@ -124,6 +134,10 @@ public class OrderJpa implements Searchable {
             }
             if (detail.getQuantity() == null || detail.getQuantity() <= 0) {
                 throw new IllegalArgumentException("La quantità deve essere maggiore di zero");
+            }
+            if (detail.getPickedQuantity() == null || detail.getPickedQuantity() < 0
+                    || detail.getPickedQuantity() > detail.getQuantity()) {
+                throw new IllegalArgumentException("La quantità prelevata non è valida");
             }
             if (!articleIds.add(detail.getArticle().getId())) {
                 throw new IllegalArgumentException("Lo stesso articolo non può comparire più volte nell'ordine");

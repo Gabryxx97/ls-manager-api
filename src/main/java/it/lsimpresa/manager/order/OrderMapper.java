@@ -1,6 +1,7 @@
 package it.lsimpresa.manager.order;
 
 import it.lsimpresa.manager.article.ArticleJpa;
+import it.lsimpresa.manager.user.UserJpa;
 import it.lsimpresa.manager.utils.DtoMapper;
 import org.springframework.stereotype.Component;
 import java.util.List;
@@ -17,6 +18,8 @@ public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
         dto.setPriority(entity.getPriority());
         dto.setStatus(entity.getStatus());
         dto.setCategory(entity.getCategory());
+        dto.setTakenInChargeAt(entity.getTakenInChargeAt());
+        fillAssignedWarehouse(entity, dto);
         return dto;
     }
 
@@ -30,6 +33,8 @@ public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
         dto.setStatus(entity.getStatus());
         dto.setCategory(entity.getCategory());
         dto.setNotes(entity.getNotes());
+        dto.setTakenInChargeAt(entity.getTakenInChargeAt());
+        fillAssignedWarehouse(entity, dto);
         dto.setDetails(entity.getDetails().stream().map(this::toDetail).toList());
         if (entity.getDetails().stream().allMatch(detail -> detail.getUnitPrice() != null)) {
             dto.setNetTotal(entity.getDetails().stream()
@@ -44,7 +49,7 @@ public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
                 .map(detail -> new OrderDraft.Detail(detail.getArticleId(), detail.getQuantity()))
                 .toList();
         return new OrderDraft(request.getWorkOrderId(), request.getDate(), request.getPriority(),
-                request.getStatus(), request.getCategory(), request.getNotes(), details);
+                request.getCategory(), request.getNotes(), details);
     }
 
     @Override
@@ -60,10 +65,33 @@ public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
         dto.setArticleSku(article.getSku());
         dto.setArticleDescription(article.getDescription());
         dto.setQuantity(entity.getQuantity());
+        dto.setStatus(entity.getStatus());
+        dto.setPickedQuantity(entity.getPickedQuantity());
+        dto.setRemainingQuantity(entity.getQuantity() - entity.getPickedQuantity());
         dto.setUnitPrice(entity.getUnitPrice());
         if (entity.getUnitPrice() != null) {
             dto.setSubtotal(entity.getUnitPrice().multiply(BigDecimal.valueOf(entity.getQuantity())).setScale(2));
         }
         return dto;
+    }
+
+    private void fillAssignedWarehouse(OrderJpa entity, OrderSummaryDto dto) {
+        UserJpa warehouse = entity.getAssignedWarehouse();
+        if (warehouse == null) return;
+        dto.setAssignedWarehouseId(warehouse.getId());
+        dto.setAssignedWarehouseName(displayName(warehouse));
+    }
+
+    private void fillAssignedWarehouse(OrderJpa entity, OrderDto dto) {
+        UserJpa warehouse = entity.getAssignedWarehouse();
+        if (warehouse == null) return;
+        dto.setAssignedWarehouseId(warehouse.getId());
+        dto.setAssignedWarehouseName(displayName(warehouse));
+    }
+
+    private String displayName(UserJpa user) {
+        String fullName = String.join(" ", user.getName() == null ? "" : user.getName(),
+                user.getSurname() == null ? "" : user.getSurname()).trim();
+        return fullName.isBlank() ? user.getUsername() : fullName;
     }
 }

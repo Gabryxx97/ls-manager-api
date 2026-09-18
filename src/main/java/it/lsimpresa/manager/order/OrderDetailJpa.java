@@ -3,6 +3,8 @@ package it.lsimpresa.manager.order;
 import it.lsimpresa.manager.article.ArticleJpa;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.ForeignKey;
 import jakarta.persistence.GeneratedValue;
@@ -28,7 +30,8 @@ import java.math.BigDecimal;
         uniqueConstraints = @UniqueConstraint(
                 name = "uk_order_detail_order_article",
                 columnNames = {"order_id", "article_id"}))
-@Check(name = "ck_order_detail_quantity_positive", constraints = "quantity > 0")
+@Check(name = "ck_order_detail_quantities", constraints =
+        "quantity > 0 AND picked_quantity >= 0 AND picked_quantity <= quantity")
 public class OrderDetailJpa {
 
     @Id
@@ -55,6 +58,15 @@ public class OrderDetailJpa {
     @Positive
     @Column(name = "quantity", nullable = false)
     private Integer quantity;
+
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 32)
+    private OrderDetailStatus status = OrderDetailStatus.TO_PICK;
+
+    @NotNull
+    @Column(name = "picked_quantity", nullable = false)
+    private Integer pickedQuantity = 0;
 
     @Column(name = "unit_price", precision = 12, scale = 2)
     private BigDecimal unitPrice;

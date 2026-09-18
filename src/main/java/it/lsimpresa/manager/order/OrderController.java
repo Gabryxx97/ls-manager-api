@@ -67,13 +67,71 @@ public class OrderController extends SearchControllerBase {
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyAuthority('ADMIN_ROLE', 'OPERATOR_ROLE')")
     public ResponseEntity<OrderDto> create(@Valid @RequestBody OrderRequestDto request) {
-        OrderJpa created = orderService.create(orderMapper.toDraft(request), userPrincipal.findUserByPrincipal());
+        OrderJpa created = orderService.create(orderMapper.toDraft(request), userPrincipal.findUserByPrincipal(), isAdmin());
         return ResponseEntity.created(URI.create("/api/orders/" + created.getId()))
                 .body(orderMapper.toDto(created));
     }
 
+    @PostMapping("/{id}/claim")
+    @PreAuthorize("hasAuthority('WAREHOUSE_ROLE')")
+    public ResponseEntity<OrderDto> claim(@PathVariable Long id) {
+        return ResponseEntity.ok(orderMapper.toDto(orderService.claim(id, userPrincipal.findUserByPrincipal())));
+    }
+
+    @PutMapping("/{id}/assignee")
+    @PreAuthorize("hasAuthority('ADMIN_ROLE')")
+    public ResponseEntity<OrderDto> assign(@PathVariable Long id,
+                                            @Valid @RequestBody OrderAssigneeRequestDto request) {
+        return ResponseEntity.ok(orderMapper.toDto(orderService.assign(id, request.warehouseUserId())));
+    }
+
+    @DeleteMapping("/{id}/assignee")
+    @PreAuthorize("hasAuthority('ADMIN_ROLE')")
+    public ResponseEntity<OrderDto> revokeAssignment(@PathVariable Long id) {
+        return ResponseEntity.ok(orderMapper.toDto(orderService.revokeAssignment(id)));
+    }
+
+    @PutMapping("/{orderId}/details/{detailId}/picked-quantity")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ROLE', 'WAREHOUSE_ROLE')")
+    public ResponseEntity<OrderDto> updatePickedQuantity(
+            @PathVariable Long orderId,
+            @PathVariable Long detailId,
+            @Valid @RequestBody PickedQuantityRequestDto request) {
+        return ResponseEntity.ok(orderMapper.toDto(orderService.updatePickedQuantity(
+                orderId, detailId, request.getPickedQuantity(),
+                userPrincipal.findUserByPrincipal(), isAdmin())));
+    }
+
+    @PostMapping("/{orderId}/details/{detailId}/to-purchase")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ROLE', 'WAREHOUSE_ROLE')")
+    public ResponseEntity<OrderDto> markToPurchase(
+            @PathVariable Long orderId,
+            @PathVariable Long detailId,
+            @Valid @RequestBody PickedQuantityRequestDto request) {
+        return ResponseEntity.ok(orderMapper.toDto(orderService.markToPurchase(
+                orderId, detailId, request.getPickedQuantity(),
+                userPrincipal.findUserByPrincipal(), isAdmin())));
+    }
+
+    @PostMapping("/{orderId}/details/{detailId}/resume-picking")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ROLE', 'WAREHOUSE_ROLE')")
+    public ResponseEntity<OrderDto> resumePicking(@PathVariable Long orderId,
+                                                   @PathVariable Long detailId) {
+        return ResponseEntity.ok(orderMapper.toDto(orderService.resumePicking(
+                orderId, detailId, userPrincipal.findUserByPrincipal(), isAdmin())));
+    }
+
+    @PostMapping("/{id}/complete")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ROLE', 'WAREHOUSE_ROLE')")
+    public ResponseEntity<OrderDto> complete(@PathVariable Long id) {
+        return ResponseEntity.ok(orderMapper.toDto(orderService.complete(
+                id, userPrincipal.findUserByPrincipal(), isAdmin())));
+    }
+
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ROLE', 'OPERATOR_ROLE')")
     public ResponseEntity<OrderDto> update(@PathVariable Long id,
                                             @Valid @RequestBody OrderRequestDto request) {
         OrderJpa order = orderService.findEntity(id);
@@ -82,6 +140,7 @@ public class OrderController extends SearchControllerBase {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ROLE', 'OPERATOR_ROLE')")
     @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {
         OrderJpa order = orderService.findEntity(id);
@@ -93,6 +152,12 @@ public class OrderController extends SearchControllerBase {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return authentication != null && authentication.getAuthorities().stream()
                 .anyMatch(granted -> "OPERATOR_ROLE".equals(granted.getAuthority()));
+    }
+
+    private boolean isAdmin() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(granted -> "ADMIN_ROLE".equals(granted.getAuthority()));
     }
 
     private Long currentUserId() {

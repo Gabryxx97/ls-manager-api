@@ -76,7 +76,8 @@ class OrderModelIntegrationTests {
                 secondWorkOrder.getId(),
                 LocalDate.of(2026, 9, 6),
                 OrderPriority.STANDARD,
-                OrderStatus.COMPLETED,
+                OrderCategory.ELECTRICAL,
+                null,
                 List.of(new OrderDraft.Detail(second.getId(), 8)));
         orderService.update(order.getId(), update);
         entityManager.flush();
@@ -94,7 +95,8 @@ class OrderModelIntegrationTests {
                 workOrderId,
                 LocalDate.of(2026, 9, 5),
                 OrderPriority.HIGH,
-                OrderStatus.PROCESSING,
+                OrderCategory.HYDRAULIC,
+                null,
                 List.of(new OrderDraft.Detail(articleId, quantity)));
     }
 

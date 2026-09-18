@@ -4,6 +4,7 @@ import it.lsimpresa.manager.article.ArticleJpa;
 import it.lsimpresa.manager.article.ArticleRepository;
 import it.lsimpresa.manager.workorder.WorkOrderJpa;
 import it.lsimpresa.manager.workorder.WorkOrderRepository;
+import it.lsimpresa.manager.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -30,6 +31,9 @@ class OrderServiceTest {
 
     @Mock
     private WorkOrderRepository workOrderRepository;
+
+    @Mock
+    private UserRepository userRepository;
 
     @InjectMocks
     private OrderService service;
@@ -88,7 +92,8 @@ class OrderServiceTest {
     @Test
     void deletesExistingOrder() {
         OrderJpa order = new OrderJpa();
-        when(orderRepository.findById(12L)).thenReturn(java.util.Optional.of(order));
+        order.setStatus(OrderStatus.PROCESSING);
+        when(orderRepository.findDetailedByIdForUpdate(12L)).thenReturn(java.util.Optional.of(order));
 
         service.delete(12L);
 
@@ -100,7 +105,8 @@ class OrderServiceTest {
                 3L,
                 LocalDate.of(2026, 9, 5),
                 OrderPriority.HIGH,
-                OrderStatus.DRAFT,
+                OrderCategory.HYDRAULIC,
+                null,
                 details);
     }
 

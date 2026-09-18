@@ -175,8 +175,8 @@ class WorkOrderApiIntegrationTests {
         String location = mockMvc.perform(post("/api/orders").with(role("ADMIN_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"workOrderId":%d,"date":"2026-09-07","priority":"STANDARD",
-                                 "status":"DRAFT","details":[{"articleId":%d,"quantity":1}]}
+                                {"workOrderId":%d,"date":"2099-09-07","priority":"STANDARD",
+                                 "status":"DRAFT","category":"HYDRAULIC","details":[{"articleId":%d,"quantity":1}]}
                                 """.formatted(workOrderId, articleId)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Location");
         return Long.parseLong(location.substring(location.lastIndexOf('/') + 1));

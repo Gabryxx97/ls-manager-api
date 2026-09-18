@@ -3,7 +3,11 @@ package it.lsimpresa.manager.order;
 import it.lsimpresa.manager.article.ArticleJpa;
 import it.lsimpresa.manager.article.ArticleRepository;
 import it.lsimpresa.manager.exception.ResourceNotFoundException;
+import it.lsimpresa.manager.exception.ResourceNotAccessExeption;
 import it.lsimpresa.manager.user.UserJpa;
+import it.lsimpresa.manager.user.UserRole;
+import it.lsimpresa.manager.user.UserRepository;
+import it.lsimpresa.manager.exception.ConflictException;
 import it.lsimpresa.manager.workorder.WorkOrderJpa;
 import it.lsimpresa.manager.workorder.WorkOrderRepository;
 import jakarta.transaction.Transactional;
@@ -17,6 +21,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.Instant;
 
 @Service
 @RequiredArgsConstructor
@@ -25,31 +32,51 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final ArticleRepository articleRepository;
     private final WorkOrderRepository workOrderRepository;
+    private final UserRepository userRepository;
+    private static final Set<OrderStatus> ASSIGNABLE_STATUSES = Set.of(OrderStatus.PROCESSING);
     @Transactional
     public OrderJpa create(OrderDraft draft) {
         OrderJpa order = new OrderJpa();
-        apply(draft, order);
+        apply(draft, order, true);
         return orderRepository.save(order);
     }
 
     @Transactional
     public OrderJpa create(OrderDraft draft, UserJpa creator) {
+        return create(draft, creator, creator != null && creator.getRole() == UserRole.ADMIN_ROLE);
+    }
+
+    @Transactional
+    public OrderJpa create(OrderDraft draft, UserJpa creator, boolean admin) {
+        validateCreationDate(draft, admin);
         OrderJpa order = new OrderJpa();
         order.setCreatedBy(creator);
-        apply(draft, order);
+        apply(draft, order, true);
         return orderRepository.save(order);
+    }
+
+    private void validateCreationDate(OrderDraft draft, boolean admin) {
+        if (draft == null || draft.date() == null) return;
+        LocalDate minimum = LocalDate.now(ZoneId.of("Europe/Rome")).plusDays(admin ? 1 : 2);
+        if (draft.date().isBefore(minimum)) {
+            throw new IllegalArgumentException(admin
+                    ? "La data dell'ordine deve essere almeno domani"
+                    : "La data dell'ordine deve essere almeno dopodomani");
+        }
     }
 
     @Transactional
     public OrderJpa update(Long id, OrderDraft draft) {
-        OrderJpa order = findEntity(id);
-        apply(draft, order);
+        OrderJpa order = findDetailedForUpdate(id);
+        assertStructurallyEditable(order);
+        apply(draft, order, false);
         return orderRepository.save(order);
     }
 
     @Transactional
     public void delete(Long id) {
-        OrderJpa order = findEntity(id);
+        OrderJpa order = findDetailedForUpdate(id);
+        assertStructurallyEditable(order);
         orderRepository.delete(order);
     }
 
@@ -65,15 +92,124 @@ public class OrderService {
         return order;
     }
 
-    private void apply(OrderDraft draft, OrderJpa order) {
+    @Transactional
+    public OrderJpa claim(Long id, UserJpa warehouse) {
+        if (warehouse.getRole() != UserRole.WAREHOUSE_ROLE) {
+            throw new IllegalArgumentException("Solo un magazziniere può prendere in carico un ordine");
+        }
+        if (orderRepository.claimIfAvailable(id, warehouse, ASSIGNABLE_STATUSES, Instant.now()) == 1) {
+            return findDetailed(id);
+        }
+        OrderJpa order = findEntity(id);
+        if (!ASSIGNABLE_STATUSES.contains(order.getStatus())) {
+            throw new ConflictException("Non è possibile prendere in carico un ordine chiuso");
+        }
+        throw new ConflictException("L'ordine è già preso in carico da un altro magazziniere");
+    }
+
+    @Transactional
+    public OrderJpa assign(Long id, Long warehouseUserId) {
+        OrderJpa order = findDetailedForUpdate(id);
+        assertAssignable(order);
+        UserJpa warehouse = userRepository.findById(warehouseUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("Magazziniere non trovato"));
+        if (warehouse.getRole() != UserRole.WAREHOUSE_ROLE) {
+            throw new IllegalArgumentException("L'utente selezionato non è un magazziniere");
+        }
+        order.setAssignedWarehouse(warehouse);
+        markTakenInCharge(order);
+        return orderRepository.save(order);
+    }
+
+    @Transactional
+    public OrderJpa revokeAssignment(Long id) {
+        OrderJpa order = findDetailedForUpdate(id);
+        assertAssignable(order);
+        order.setAssignedWarehouse(null);
+        return orderRepository.save(order);
+    }
+
+    private void assertAssignable(OrderJpa order) {
+        if (!ASSIGNABLE_STATUSES.contains(order.getStatus())) {
+            throw new ConflictException("Non è possibile modificare l'assegnazione di un ordine chiuso");
+        }
+    }
+
+    @Transactional
+    public OrderJpa updatePickedQuantity(Long orderId, Long detailId, Integer pickedQuantity,
+                                         UserJpa actor, boolean admin) {
+        OrderJpa order = findDetailedForUpdate(orderId);
+        assertWorkflowAccess(order, actor, admin);
+        OrderDetailJpa detail = findDetail(order, detailId);
+        if (detail.getStatus() == OrderDetailStatus.TO_PURCHASE
+                || detail.getStatus() == OrderDetailStatus.CANCELED
+                || detail.getStatus() == OrderDetailStatus.REPLACED) {
+            throw new ConflictException("La riga non può essere aggiornata nello stato corrente");
+        }
+        validatePickedQuantity(detail, pickedQuantity);
+        detail.setPickedQuantity(pickedQuantity);
+        detail.setStatus(pickedQuantity.equals(detail.getQuantity())
+                ? OrderDetailStatus.COMPLETED : OrderDetailStatus.TO_PICK);
+        markTakenInCharge(order);
+        return orderRepository.save(order);
+    }
+
+    @Transactional
+    public OrderJpa markToPurchase(Long orderId, Long detailId, Integer pickedQuantity,
+                                   UserJpa actor, boolean admin) {
+        OrderJpa order = findDetailedForUpdate(orderId);
+        assertWorkflowAccess(order, actor, admin);
+        OrderDetailJpa detail = findDetail(order, detailId);
+        if (detail.getStatus() != OrderDetailStatus.TO_PICK) {
+            throw new ConflictException("Solo una riga da prelevare può essere contrassegnata da ordinare");
+        }
+        validatePickedQuantity(detail, pickedQuantity);
+        if (pickedQuantity.equals(detail.getQuantity())) {
+            throw new IllegalArgumentException("Non è possibile ordinare una riga già prelevata completamente");
+        }
+        detail.setPickedQuantity(pickedQuantity);
+        detail.setStatus(OrderDetailStatus.TO_PURCHASE);
+        markTakenInCharge(order);
+        return orderRepository.save(order);
+    }
+
+    @Transactional
+    public OrderJpa resumePicking(Long orderId, Long detailId, UserJpa actor, boolean admin) {
+        OrderJpa order = findDetailedForUpdate(orderId);
+        assertWorkflowAccess(order, actor, admin);
+        OrderDetailJpa detail = findDetail(order, detailId);
+        if (detail.getStatus() != OrderDetailStatus.TO_PURCHASE) {
+            throw new ConflictException("Solo una riga da ordinare può tornare al prelievo");
+        }
+        detail.setStatus(OrderDetailStatus.TO_PICK);
+        markTakenInCharge(order);
+        return orderRepository.save(order);
+    }
+
+    @Transactional
+    public OrderJpa complete(Long id, UserJpa actor, boolean admin) {
+        OrderJpa order = findDetailedForUpdate(id);
+        assertWorkflowAccess(order, actor, admin);
+        if (order.getDetails().stream().anyMatch(detail -> detail.getStatus() != OrderDetailStatus.COMPLETED)) {
+            throw new ConflictException("Tutte le righe devono essere completate prima di completare l'ordine");
+        }
+        order.setStatus(OrderStatus.COMPLETED);
+        markTakenInCharge(order);
+        return orderRepository.save(order);
+    }
+
+    private void apply(OrderDraft draft, OrderJpa order, boolean creating) {
         if (draft == null) {
             throw new IllegalArgumentException("I dati dell'ordine sono obbligatori");
         }
         if (draft.workOrderId() == null) {
             throw new IllegalArgumentException("La commessa è obbligatoria");
         }
-        if (draft.date() == null || draft.priority() == null || draft.status() == null) {
-            throw new IllegalArgumentException("Data, priorità e stato sono obbligatori");
+        if (draft.date() == null || draft.priority() == null) {
+            throw new IllegalArgumentException("Data e priorità sono obbligatorie");
+        }
+        if (draft.category() == null) {
+            throw new IllegalArgumentException("La categoria è obbligatoria");
         }
         if (draft.details() == null || draft.details().isEmpty()) {
             throw new IllegalArgumentException("L'ordine deve contenere almeno una riga");
@@ -101,6 +237,8 @@ public class OrderService {
             OrderDetailJpa detail = new OrderDetailJpa();
             detail.setArticle(articles.get(articleId));
             detail.setQuantity(quantity);
+            detail.setPickedQuantity(0);
+            detail.setStatus(OrderDetailStatus.TO_PICK);
             BigDecimal historical = historicalPrices.get(articleId);
             BigDecimal price = historical != null ? historical : articles.get(articleId).getUnitPrice();
             if (price == null) {
@@ -114,10 +252,57 @@ public class OrderService {
         order.setName(workOrder.getName());
         order.setDate(draft.date());
         order.setPriority(draft.priority());
-        order.setStatus(draft.status());
-        order.setCategory(draft.category() == null ? OrderCategory.HYDRAULIC_HVAC : draft.category());
+        if (creating) {
+            order.setStatus(OrderStatus.PROCESSING);
+        }
+        order.setCategory(draft.category());
         order.setNotes(normalizeNotes(draft.notes()));
         order.replaceDetails(details);
+    }
+
+    private OrderJpa findDetailedForUpdate(Long id) {
+        return orderRepository.findDetailedByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Ordine non trovato"));
+    }
+
+    private OrderDetailJpa findDetail(OrderJpa order, Long detailId) {
+        return order.getDetails().stream()
+                .filter(detail -> detail.getId().equals(detailId))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("Riga ordine non trovata"));
+    }
+
+    private void assertStructurallyEditable(OrderJpa order) {
+        if (order.getTakenInChargeAt() != null || order.getStatus() != OrderStatus.PROCESSING) {
+            throw new ConflictException("L'ordine preso in carico non può più essere modificato o eliminato");
+        }
+    }
+
+    private void assertWorkflowAccess(OrderJpa order, UserJpa actor, boolean admin) {
+        if (order.getStatus() != OrderStatus.PROCESSING) {
+            throw new ConflictException("Un ordine chiuso non può essere lavorato");
+        }
+        if (admin) return;
+        if (actor == null || actor.getRole() != UserRole.WAREHOUSE_ROLE
+                || order.getAssignedWarehouse() == null
+                || !order.getAssignedWarehouse().getId().equals(actor.getId())) {
+            throw new ResourceNotAccessExeption("Solo il magazziniere assegnato può lavorare questo ordine");
+        }
+    }
+
+    private void validatePickedQuantity(OrderDetailJpa detail, Integer pickedQuantity) {
+        if (pickedQuantity == null || pickedQuantity < 0) {
+            throw new IllegalArgumentException("La quantità prelevata non può essere negativa");
+        }
+        if (pickedQuantity > detail.getQuantity()) {
+            throw new IllegalArgumentException("La quantità prelevata non può superare quella richiesta");
+        }
+    }
+
+    private void markTakenInCharge(OrderJpa order) {
+        if (order.getTakenInChargeAt() == null) {
+            order.setTakenInChargeAt(Instant.now());
+        }
     }
 
     private String normalizeNotes(String notes) {
