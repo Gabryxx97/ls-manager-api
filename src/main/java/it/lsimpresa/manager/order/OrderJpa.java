@@ -1,6 +1,7 @@
 package it.lsimpresa.manager.order;
 
 import it.lsimpresa.manager.utils.search.Searchable;
+import it.lsimpresa.manager.user.UserJpa;
 import it.lsimpresa.manager.workorder.WorkOrderJpa;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -22,6 +23,8 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -67,6 +70,11 @@ public class OrderJpa implements Searchable {
 
     @Column(name = "notes", columnDefinition = "text")
     private String notes;
+
+    @ManyToOne(fetch = jakarta.persistence.FetchType.LAZY)
+    @JoinColumn(name = "created_by_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
+    private UserJpa createdBy;
 
     @Column(name = "search", nullable = false, columnDefinition = "text")
     private String search;

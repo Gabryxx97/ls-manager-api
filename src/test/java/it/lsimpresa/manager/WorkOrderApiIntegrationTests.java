@@ -4,6 +4,9 @@ import it.lsimpresa.manager.article.ArticleJpa;
 import it.lsimpresa.manager.article.ArticleRepository;
 import it.lsimpresa.manager.order.OrderRepository;
 import it.lsimpresa.manager.workorder.WorkOrderRepository;
+import it.lsimpresa.manager.user.UserJpa;
+import it.lsimpresa.manager.user.UserRepository;
+import it.lsimpresa.manager.user.UserRole;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +32,7 @@ class WorkOrderApiIntegrationTests {
     @Autowired private WorkOrderRepository workOrderRepository;
     @Autowired private OrderRepository orderRepository;
     @Autowired private ArticleRepository articleRepository;
+    @Autowired private UserRepository userRepository;
 
     @BeforeEach
     @AfterEach
@@ -36,6 +40,14 @@ class WorkOrderApiIntegrationTests {
         orderRepository.deleteAll();
         workOrderRepository.deleteAll();
         articleRepository.deleteAll();
+        if (userRepository.findByUsername("test-user") == null) {
+            UserJpa user = new UserJpa();
+            user.setUsername("test-user");
+            user.setPassword("test-password");
+            user.setRole(UserRole.OPERATOR_ROLE);
+            user.setAccountActive(true);
+            userRepository.saveAndFlush(user);
+        }
     }
 
     @Test
@@ -44,12 +56,12 @@ class WorkOrderApiIntegrationTests {
                         .with(role("ADMIN_ROLE")))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/workorders").param("page", "1").param("pageSize", "10")
-                        .with(role("USER_ROLE")))
+                        .with(role("OPERATOR_ROLE")))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/workorders").param("page", "1").param("pageSize", "10"))
                 .andExpect(status().isUnauthorized());
 
-        long id = createWorkOrder("  Commessa   Alfa  ", "  Descrizione  ", "USER_ROLE");
+        long id = createWorkOrder("  Commessa   Alfa  ", "  Descrizione  ", "ADMIN_ROLE");
         mockMvc.perform(get("/api/workorders/{id}", id).with(role("ADMIN_ROLE")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Commessa Alfa"))
@@ -61,7 +73,7 @@ class WorkOrderApiIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Commessa Beta"));
 
-        mockMvc.perform(delete("/api/workorders/{id}", id).with(role("USER_ROLE")).with(csrf()))
+        mockMvc.perform(delete("/api/workorders/{id}", id).with(role("ADMIN_ROLE")).with(csrf()))
                 .andExpect(status().isNoContent());
         assertThat(workOrderRepository.findById(id)).isEmpty();
     }
@@ -70,20 +82,20 @@ class WorkOrderApiIntegrationTests {
     void validatesNamesAndRejectsNormalizedCaseInsensitiveDuplicates() throws Exception {
         createWorkOrder("Commessa Alfa", null, "ADMIN_ROLE");
 
-        mockMvc.perform(post("/api/workorders").with(role("USER_ROLE")).with(csrf())
+        mockMvc.perform(post("/api/workorders").with(role("ADMIN_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"  COMMESSA    alfa  \",\"description\":\"Duplicata\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("Esiste già una commessa con questo nome"));
 
-        mockMvc.perform(post("/api/workorders").with(role("USER_ROLE")).with(csrf())
+        mockMvc.perform(post("/api/workorders").with(role("ADMIN_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"   \"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.name").value("Il nome è obbligatorio"));
 
         String tooLong = "a".repeat(256);
-        mockMvc.perform(post("/api/workorders").with(role("USER_ROLE")).with(csrf())
+        mockMvc.perform(post("/api/workorders").with(role("ADMIN_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"%s\"}".formatted(tooLong)))
                 .andExpect(status().isBadRequest())
@@ -98,7 +110,7 @@ class WorkOrderApiIntegrationTests {
         mockMvc.perform(get("/api/workorders")
                         .param("page", "1").param("pageSize", "1")
                         .param("sort", "{\"name\":\"ASC\"}")
-                        .with(role("USER_ROLE")))
+                        .with(role("OPERATOR_ROLE")))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Range", "items 0-0/2"))
                 .andExpect(jsonPath("$[0].name").value("Alfa"));
@@ -125,13 +137,13 @@ class WorkOrderApiIntegrationTests {
         long secondOrder = createOrder(workOrderId, article.getId());
 
         mockMvc.perform(put("/api/workorders/{id}", workOrderId)
-                        .with(role("USER_ROLE")).with(csrf())
+                        .with(role("ADMIN_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Commessa rinominata\",\"description\":\"Nuova\"}"))
                 .andExpect(status().isOk());
 
         for (long orderId : new long[]{firstOrder, secondOrder}) {
-            mockMvc.perform(get("/api/orders/{id}", orderId).with(role("USER_ROLE")))
+            mockMvc.perform(get("/api/orders/{id}", orderId).with(role("OPERATOR_ROLE")))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.workOrderId").value(workOrderId))
                     .andExpect(jsonPath("$.name").value("Commessa rinominata"));

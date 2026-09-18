@@ -31,11 +31,11 @@ class ArticleApiIntegrationTests {
     @Test void bothRolesCanListArticles() throws Exception {
         saveArticle("ART-1", "Articolo");
         mockMvc.perform(get("/api/articles").param("page", "1").param("pageSize", "10").with(role("ADMIN_ROLE"))).andExpect(status().isOk());
-        mockMvc.perform(get("/api/articles").param("page", "1").param("pageSize", "10").with(role("USER_ROLE"))).andExpect(status().isOk());
+        mockMvc.perform(get("/api/articles").param("page", "1").param("pageSize", "10").with(role("OPERATOR_ROLE"))).andExpect(status().isOk());
     }
 
     @Test void createNormalizesAndReturnsWarehouseFields() throws Exception {
-        mockMvc.perform(post("/api/articles").with(role("USER_ROLE")).with(csrf())
+        mockMvc.perform(post("/api/articles").with(role("ADMIN_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("""
                         {"sku":"  ab  12 ","description":"  Bullone   zincato  ",
                          "category":" Ferramenta ","costCenter":" Cantiere   A ",
@@ -68,7 +68,7 @@ class ArticleApiIntegrationTests {
         alpha.setLocation("Furgone 2");
         articleRepository.saveAndFlush(alpha);
         mockMvc.perform(get("/api/articles").param("page", "1").param("pageSize", "1")
-                        .param("sort", "{\"sku\":\"ASC\"}").with(role("USER_ROLE")))
+                        .param("sort", "{\"sku\":\"ASC\"}").with(role("OPERATOR_ROLE")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$[0].sku").value("A-1"));
         mockMvc.perform(get("/api/articles").param("page", "1").param("pageSize", "10")
                         .param("filter", "{\"search\":{\"operator\":\"ILIKE\",\"values\":[\"FURGONE\"]}}")
@@ -83,17 +83,17 @@ class ArticleApiIntegrationTests {
                         .content("{\"id\":999,\"sku\":\"NEW\",\"description\":\"Nuova descrizione\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(article.getId()))
                 .andExpect(jsonPath("$.sku").value("NEW"));
-        mockMvc.perform(delete("/api/articles/{id}", article.getId()).with(role("USER_ROLE")).with(csrf()))
+        mockMvc.perform(delete("/api/articles/{id}", article.getId()).with(role("ADMIN_ROLE")).with(csrf()))
                 .andExpect(status().isNoContent());
         assertThat(articleRepository.findById(article.getId())).isEmpty();
     }
 
     @Test void missingArticleReturnsNotFound() throws Exception {
-        mockMvc.perform(get("/api/articles/{id}", 999999).with(role("USER_ROLE"))).andExpect(status().isNotFound());
-        mockMvc.perform(put("/api/articles/{id}", 999999).with(role("USER_ROLE")).with(csrf())
+        mockMvc.perform(get("/api/articles/{id}", 999999).with(role("OPERATOR_ROLE"))).andExpect(status().isNotFound());
+        mockMvc.perform(put("/api/articles/{id}", 999999).with(role("ADMIN_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"sku\":\"X\",\"description\":\"Inesistente\"}"))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(delete("/api/articles/{id}", 999999).with(role("USER_ROLE")).with(csrf())).andExpect(status().isNotFound());
+        mockMvc.perform(delete("/api/articles/{id}", 999999).with(role("ADMIN_ROLE")).with(csrf())).andExpect(status().isNotFound());
     }
 
     @Test void importCreatesUpdatesPreservesPriceAndReportsInvalidRows() throws Exception {
@@ -101,7 +101,7 @@ class ArticleApiIntegrationTests {
         existing.setUnitPrice(new BigDecimal("9.50"));
         existing.setCategory("Vecchia categoria");
         articleRepository.saveAndFlush(existing);
-        mockMvc.perform(post("/api/articles/import").with(role("USER_ROLE")).with(csrf())
+        mockMvc.perform(post("/api/articles/import").with(role("ADMIN_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("""
                         {"items":[
                           {"rowNumber":2,"sku":"existing","description":"Aggiornata","category":"","stockQuantity":-3.25},

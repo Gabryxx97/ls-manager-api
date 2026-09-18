@@ -92,7 +92,7 @@ class SecurityIntegrationTests {
     void standardUserCannotAccessUserManagement() throws Exception {
         mockMvc.perform(get("/api/users?page=1&pageSize=10")
                         .with(user("standard")
-                                .authorities(new SimpleGrantedAuthority("USER_ROLE"))))
+                                .authorities(new SimpleGrantedAuthority("OPERATOR_ROLE"))))
                 .andExpect(status().isForbidden())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.status").value(403));

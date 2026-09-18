@@ -18,7 +18,7 @@ import java.util.Set;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/workorders")
-@PreAuthorize("hasAnyAuthority('ADMIN_ROLE', 'USER_ROLE')")
+@PreAuthorize("hasAnyAuthority('ADMIN_ROLE', 'OPERATOR_ROLE', 'WAREHOUSE_ROLE')")
 public class WorkOrderController extends SearchControllerBase {
     private static final Map<String, Set<String>> ALLOWED_FILTERS = Map.of(
             "id", Set.of("EQUAL", "IN"), "search", Set.of("ILIKE"));
@@ -46,18 +46,21 @@ public class WorkOrderController extends SearchControllerBase {
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('ADMIN_ROLE')")
     public ResponseEntity<WorkOrderDto> create(@Valid @RequestBody WorkOrderDto workOrder) {
         WorkOrderDto created = service.create(workOrder);
         return ResponseEntity.created(URI.create("/api/workorders/" + created.getId())).body(created);
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('ADMIN_ROLE')")
     public ResponseEntity<WorkOrderDto> update(@PathVariable Long id,
                                                 @Valid @RequestBody WorkOrderDto workOrder) {
         return ResponseEntity.ok(service.update(id, workOrder));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('ADMIN_ROLE')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {
         service.delete(id);

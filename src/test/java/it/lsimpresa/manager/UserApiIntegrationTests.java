@@ -53,7 +53,7 @@ class UserApiIntegrationTests {
                                   "id": 999,
                                   "username": " new.user@example.test ",
                                   "password": "plain-password",
-                                  "role": "USER_ROLE",
+                                  "role": "OPERATOR_ROLE",
                                   "name": "Nuovo",
                                   "surname": "Utente"
                                 }
@@ -86,7 +86,7 @@ class UserApiIntegrationTests {
 
     @Test
     void updateUsesPathIdAndKeepsPasswordWhenOmitted() throws Exception {
-        UserJpa target = saveUser("target", "original-password", UserRole.USER_ROLE);
+        UserJpa target = saveUser("target", "original-password", UserRole.OPERATOR_ROLE);
         String originalHash = target.getPassword();
 
         mockMvc.perform(put("/api/users/{id}", target.getId())
@@ -115,7 +115,7 @@ class UserApiIntegrationTests {
 
     @Test
     void updateHashesANewPassword() throws Exception {
-        UserJpa target = saveUser("target", "original-password", UserRole.USER_ROLE);
+        UserJpa target = saveUser("target", "original-password", UserRole.OPERATOR_ROLE);
 
         mockMvc.perform(put("/api/users/{id}", target.getId())
                         .with(admin())
@@ -125,7 +125,7 @@ class UserApiIntegrationTests {
                                 {
                                   "username": "target",
                                   "password": "changed-password",
-                                  "role": "USER_ROLE"
+                                  "role": "OPERATOR_ROLE"
                                 }
                                 """))
                 .andExpect(status().isOk());
@@ -137,20 +137,20 @@ class UserApiIntegrationTests {
 
     @Test
     void duplicateUsernameReturnsConflictOnCreateAndUpdate() throws Exception {
-        UserJpa first = saveUser("already-used", "password", UserRole.USER_ROLE);
-        UserJpa second = saveUser("second", "password", UserRole.USER_ROLE);
+        UserJpa first = saveUser("already-used", "password", UserRole.OPERATOR_ROLE);
+        UserJpa second = saveUser("second", "password", UserRole.OPERATOR_ROLE);
 
         mockMvc.perform(post("/api/users")
                         .with(admin()).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"already-used\",\"password\":\"password\",\"role\":\"USER_ROLE\"}"))
+                        .content("{\"username\":\"already-used\",\"password\":\"password\",\"role\":\"OPERATOR_ROLE\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("Esiste già un utente con questo username"));
 
         mockMvc.perform(put("/api/users/{id}", second.getId())
                         .with(admin()).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"already-used\",\"role\":\"USER_ROLE\"}"))
+                        .content("{\"username\":\"already-used\",\"role\":\"OPERATOR_ROLE\"}"))
                 .andExpect(status().isConflict());
 
         assertThat(userRepository.findById(first.getId())).isPresent();
@@ -166,7 +166,7 @@ class UserApiIntegrationTests {
         mockMvc.perform(put("/api/users/{id}", 999999)
                         .with(admin()).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"missing\",\"role\":\"USER_ROLE\"}"))
+                        .content("{\"username\":\"missing\",\"role\":\"OPERATOR_ROLE\"}"))
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(delete("/api/users/{id}", 999999).with(admin()).with(csrf()))
@@ -175,7 +175,7 @@ class UserApiIntegrationTests {
 
     @Test
     void adminCannotDeleteOwnAccountButCanDeleteAnotherUser() throws Exception {
-        UserJpa target = saveUser("target", "password", UserRole.USER_ROLE);
+        UserJpa target = saveUser("target", "password", UserRole.OPERATOR_ROLE);
 
         mockMvc.perform(delete("/api/users/{id}", admin.getId()).with(admin()).with(csrf()))
                 .andExpect(status().isConflict())
@@ -190,17 +190,17 @@ class UserApiIntegrationTests {
 
     @Test
     void standardUserCannotEscalatePrivileges() throws Exception {
-        UserJpa standard = saveUser("standard", "password", UserRole.USER_ROLE);
+        UserJpa standard = saveUser("standard", "password", UserRole.OPERATOR_ROLE);
 
         mockMvc.perform(put("/api/users/{id}", standard.getId())
-                        .with(user("standard").authorities(new SimpleGrantedAuthority("USER_ROLE")))
+                        .with(user("standard").authorities(new SimpleGrantedAuthority("OPERATOR_ROLE")))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"standard\",\"role\":\"ADMIN_ROLE\"}"))
                 .andExpect(status().isForbidden());
 
         assertThat(userRepository.findById(standard.getId()).orElseThrow().getRole())
-                .isEqualTo(UserRole.USER_ROLE);
+                .isEqualTo(UserRole.OPERATOR_ROLE);
     }
 
     private UserJpa saveUser(String username, String password, UserRole role) {

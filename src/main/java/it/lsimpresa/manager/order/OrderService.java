@@ -3,6 +3,7 @@ package it.lsimpresa.manager.order;
 import it.lsimpresa.manager.article.ArticleJpa;
 import it.lsimpresa.manager.article.ArticleRepository;
 import it.lsimpresa.manager.exception.ResourceNotFoundException;
+import it.lsimpresa.manager.user.UserJpa;
 import it.lsimpresa.manager.workorder.WorkOrderJpa;
 import it.lsimpresa.manager.workorder.WorkOrderRepository;
 import jakarta.transaction.Transactional;
@@ -24,10 +25,17 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final ArticleRepository articleRepository;
     private final WorkOrderRepository workOrderRepository;
-
     @Transactional
     public OrderJpa create(OrderDraft draft) {
         OrderJpa order = new OrderJpa();
+        apply(draft, order);
+        return orderRepository.save(order);
+    }
+
+    @Transactional
+    public OrderJpa create(OrderDraft draft, UserJpa creator) {
+        OrderJpa order = new OrderJpa();
+        order.setCreatedBy(creator);
         apply(draft, order);
         return orderRepository.save(order);
     }
@@ -41,7 +49,8 @@ public class OrderService {
 
     @Transactional
     public void delete(Long id) {
-        orderRepository.delete(findEntity(id));
+        OrderJpa order = findEntity(id);
+        orderRepository.delete(order);
     }
 
     public OrderJpa findEntity(Long id) {
@@ -51,8 +60,9 @@ public class OrderService {
 
     @Transactional
     public OrderJpa findDetailed(Long id) {
-        return orderRepository.findDetailedById(id)
+        OrderJpa order = orderRepository.findDetailedById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Ordine non trovato"));
+        return order;
     }
 
     private void apply(OrderDraft draft, OrderJpa order) {

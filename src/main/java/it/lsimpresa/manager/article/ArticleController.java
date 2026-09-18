@@ -27,7 +27,7 @@ import java.util.Set;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/articles")
-@PreAuthorize("hasAnyAuthority('ADMIN_ROLE', 'USER_ROLE')")
+@PreAuthorize("hasAnyAuthority('ADMIN_ROLE', 'OPERATOR_ROLE', 'WAREHOUSE_ROLE')")
 public class ArticleController extends SearchControllerBase {
 
     private static final Map<String, Set<String>> ALLOWED_FILTERS = Map.of(
@@ -62,18 +62,21 @@ public class ArticleController extends SearchControllerBase {
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('ADMIN_ROLE')")
     public ResponseEntity<ArticleDto> create(@Valid @RequestBody ArticleDto article) {
         ArticleDto created = articleService.create(article);
         return ResponseEntity.created(URI.create("/api/articles/" + created.getId())).body(created);
     }
 
     @PostMapping("/import")
+    @PreAuthorize("hasAuthority('ADMIN_ROLE')")
     public ResponseEntity<ArticleImportDto.Response> importArticles(
             @Valid @RequestBody ArticleImportDto.Request request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(articleService.importArticles(request));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('ADMIN_ROLE')")
     public ResponseEntity<ArticleDto> update(
             @PathVariable Long id,
             @Valid @RequestBody ArticleDto article) {
@@ -81,6 +84,7 @@ public class ArticleController extends SearchControllerBase {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('ADMIN_ROLE')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {
         articleService.delete(id);

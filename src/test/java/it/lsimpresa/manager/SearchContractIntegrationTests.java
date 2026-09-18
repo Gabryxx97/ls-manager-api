@@ -137,7 +137,7 @@ class SearchContractIntegrationTests {
         user.setPassword("not-used-in-this-test");
         user.setName(name);
         user.setSurname(surname);
-        user.setRole(UserRole.USER_ROLE);
+        user.setRole(UserRole.OPERATOR_ROLE);
         user.setAccountActive(true);
         return user;
     }

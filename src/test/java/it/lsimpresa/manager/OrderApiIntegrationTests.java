@@ -6,6 +6,9 @@ import it.lsimpresa.manager.order.OrderJpa;
 import it.lsimpresa.manager.order.OrderRepository;
 import it.lsimpresa.manager.workorder.WorkOrderJpa;
 import it.lsimpresa.manager.workorder.WorkOrderRepository;
+import it.lsimpresa.manager.user.UserJpa;
+import it.lsimpresa.manager.user.UserRepository;
+import it.lsimpresa.manager.user.UserRole;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,12 +43,23 @@ class OrderApiIntegrationTests {
     @Autowired
     private WorkOrderRepository workOrderRepository;
 
+    @Autowired
+    private UserRepository userRepository;
+
     @BeforeEach
     @AfterEach
     void clearData() {
         orderRepository.deleteAll();
         workOrderRepository.deleteAll();
         articleRepository.deleteAll();
+        if (userRepository.findByUsername("test-user") == null) {
+            UserJpa user = new UserJpa();
+            user.setUsername("test-user");
+            user.setPassword("test-password");
+            user.setRole(UserRole.OPERATOR_ROLE);
+            user.setAccountActive(true);
+            userRepository.saveAndFlush(user);
+        }
     }
 
     @Test
@@ -57,7 +71,12 @@ class OrderApiIntegrationTests {
 
         mockMvc.perform(get("/api/orders")
                         .param("page", "1").param("pageSize", "10")
-                        .with(role("USER_ROLE")))
+                        .with(role("OPERATOR_ROLE")))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/orders")
+                        .param("page", "1").param("pageSize", "10")
+                        .with(role("WAREHOUSE_ROLE")))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/orders")
@@ -66,12 +85,45 @@ class OrderApiIntegrationTests {
     }
 
     @Test
+    void operatorCanOnlyAccessOwnOrdersWhileWarehouseCanAccessAllOrders() throws Exception {
+        UserJpa other = new UserJpa();
+        other.setUsername("other-user");
+        other.setPassword("test-password");
+        other.setRole(UserRole.OPERATOR_ROLE);
+        other.setAccountActive(true);
+        userRepository.saveAndFlush(other);
+        ArticleJpa article = saveArticle("Articolo", null);
+        WorkOrderJpa workOrder = saveWorkOrder("Ordine riservato");
+
+        String location = mockMvc.perform(post("/api/orders")
+                        .with(role("OPERATOR_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(orderJson(workOrder.getId(), "2026-09-05", "LOW", "DRAFT", article.getId(), 1)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getHeader("Location");
+        long orderId = Long.parseLong(location.substring(location.lastIndexOf('/') + 1));
+
+        mockMvc.perform(get("/api/orders").param("page", "1").param("pageSize", "10")
+                        .with(role("other-user", "OPERATOR_ROLE")))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Range", "items 0-0/0"));
+        mockMvc.perform(get("/api/orders/{id}", orderId).with(role("other-user", "OPERATOR_ROLE")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/orders/{id}", orderId).with(role("other-user", "OPERATOR_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(orderJson(workOrder.getId(), "2026-09-06", "HIGH", "PROCESSING", article.getId(), 2)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/orders/{id}", orderId).with(role("WAREHOUSE_ROLE")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void createReturnsDetailedOrderAndListReturnsOnlyHeader() throws Exception {
         ArticleJpa article = saveArticle("Bullone M8", "Zincato");
         WorkOrderJpa workOrder = saveWorkOrder("  Ordine   urgente  ");
 
         String response = mockMvc.perform(post("/api/orders")
-                        .with(role("USER_ROLE")).with(csrf())
+                        .with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(orderJson(workOrder.getId(), "2026-09-05", "HIGH",
                                 "DRAFT", article.getId(), 3)))
@@ -90,7 +142,7 @@ class OrderApiIntegrationTests {
         assertThat(response).contains("\"id\"");
         mockMvc.perform(get("/api/orders")
                         .param("page", "1").param("pageSize", "10")
-                        .with(role("USER_ROLE")))
+                        .with(role("OPERATOR_ROLE")))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Range", "items 0-0/1"))
                 .andExpect(jsonPath("$[0].name").value("Ordine urgente"))
@@ -138,7 +190,7 @@ class OrderApiIntegrationTests {
         WorkOrderJpa otherWorkOrder = saveWorkOrder("Non salvare");
 
         mockMvc.perform(put("/api/orders/{id}", orderId)
-                        .with(role("USER_ROLE")).with(csrf())
+                        .with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(orderJson(otherWorkOrder.getId(), "2026-09-08", "LOW",
                                 "SHIPPED", 999999L, 7)))
@@ -159,7 +211,7 @@ class OrderApiIntegrationTests {
         WorkOrderJpa duplicateWorkOrder = saveWorkOrder("Duplicato");
 
         mockMvc.perform(post("/api/orders")
-                        .with(role("USER_ROLE")).with(csrf())
+                        .with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"workOrderId":%d,"date":"2026-09-05","priority":"LOW",
@@ -170,7 +222,7 @@ class OrderApiIntegrationTests {
                         .value("L'ordine deve contenere almeno una riga"));
 
         mockMvc.perform(post("/api/orders")
-                        .with(role("USER_ROLE")).with(csrf())
+                        .with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(orderJson(quantityWorkOrder.getId(), "2026-09-05", "LOW",
                                 "DRAFT", article.getId(), 0)))
@@ -179,7 +231,7 @@ class OrderApiIntegrationTests {
                         .value("La quantità deve essere maggiore di zero"));
 
         mockMvc.perform(post("/api/orders")
-                        .with(role("USER_ROLE")).with(csrf())
+                        .with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(("""
                                 {"workOrderId":%d,"date":"2026-09-05","priority":"LOW",
@@ -197,7 +249,7 @@ class OrderApiIntegrationTests {
     void workOrderIsRequiredAndMustExist() throws Exception {
         ArticleJpa article = saveArticle("Articolo", null);
 
-        mockMvc.perform(post("/api/orders").with(role("USER_ROLE")).with(csrf())
+        mockMvc.perform(post("/api/orders").with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"date":"2026-09-05","priority":"LOW","status":"DRAFT",
@@ -206,7 +258,7 @@ class OrderApiIntegrationTests {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.workOrderId").value("La commessa è obbligatoria"));
 
-        mockMvc.perform(post("/api/orders").with(role("USER_ROLE")).with(csrf())
+        mockMvc.perform(post("/api/orders").with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(orderJson(999999L, "2026-09-05", "LOW", "DRAFT", article.getId(), 1)))
                 .andExpect(status().isBadRequest())
@@ -220,7 +272,7 @@ class OrderApiIntegrationTests {
         articleRepository.saveAndFlush(article);
         WorkOrderJpa workOrder = saveWorkOrder("Ordine senza prezzo");
 
-        mockMvc.perform(post("/api/orders").with(role("USER_ROLE")).with(csrf())
+        mockMvc.perform(post("/api/orders").with(role("OPERATOR_ROLE")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(orderJson(workOrder.getId(), "2026-09-05", "LOW",
                                 "DRAFT", article.getId(), 1)))
@@ -239,7 +291,7 @@ class OrderApiIntegrationTests {
                         .param("page", "1").param("pageSize", "1")
                         .param("sort", "{\"name\":\"ASC\"}")
                         .param("filter", "{\"status\":{\"operator\":\"EQUAL\",\"values\":[\"PROCESSING\"]}}")
-                        .with(role("USER_ROLE")))
+                        .with(role("OPERATOR_ROLE")))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Range", "items 0-0/1"))
                 .andExpect(jsonPath("$[0].name").value("Ordine test"));
@@ -265,16 +317,16 @@ class OrderApiIntegrationTests {
         long orderId = createOrder(article.getId());
 
         mockMvc.perform(delete("/api/orders/{id}", orderId)
-                        .with(role("USER_ROLE")).with(csrf()))
+                        .with(role("OPERATOR_ROLE")).with(csrf()))
                 .andExpect(status().isNoContent())
                 .andExpect(content().string(""));
         assertThat(orderRepository.findById(orderId)).isEmpty();
 
-        mockMvc.perform(get("/api/orders/{id}", 999999L).with(role("USER_ROLE")))
+        mockMvc.perform(get("/api/orders/{id}", 999999L).with(role("OPERATOR_ROLE")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.detail").value("Ordine non trovato"));
         mockMvc.perform(delete("/api/orders/{id}", 999999L)
-                        .with(role("USER_ROLE")).with(csrf()))
+                        .with(role("OPERATOR_ROLE")).with(csrf()))
                 .andExpect(status().isNotFound());
     }
 
@@ -317,6 +369,10 @@ class OrderApiIntegrationTests {
     }
 
     private org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.UserRequestPostProcessor role(String role) {
-        return user("test-user").authorities(new SimpleGrantedAuthority(role));
+        return role("test-user", role);
+    }
+
+    private org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.UserRequestPostProcessor role(String username, String role) {
+        return user(username).authorities(new SimpleGrantedAuthority(role));
     }
 }

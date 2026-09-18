@@ -81,6 +81,8 @@ public class SearchService implements ISearchService{
 			// Qui controlliamo se il filtro riguarda un campo derivato da una relazione.
 			if ("userId".equals(field)) {
 				res.add(cb.equal(entity.get("user").get("id"), filters.get(field).getValues()[0]));
+			} else if ("createdById".equals(field)) {
+				res.add(cb.equal(entity.get("createdBy").get("id"), filters.get(field).getValues()[0]));
 			} else if ("orderId".equals(field)) {
 				res.add(cb.equal(entity.get("order").get("id"), filters.get(field).getValues()[0]));
 			} else {
@@ -90,6 +92,8 @@ public class SearchService implements ISearchService{
 			for (String field : filters.keySet()) {
 				if ("userId".equals(field)) {
 					res.add(cb.equal(entity.get("user").get("id"), filters.get(field).getValues()[0]));
+				} else if ("createdById".equals(field)) {
+					res.add(cb.equal(entity.get("createdBy").get("id"), filters.get(field).getValues()[0]));
 				} else if ("orderId".equals(field)) {
 					res.add(cb.equal(entity.get("order").get("id"), filters.get(field).getValues()[0]));
 				} else {
