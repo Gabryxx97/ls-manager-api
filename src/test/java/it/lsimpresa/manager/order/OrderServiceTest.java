@@ -12,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -87,6 +88,40 @@ class OrderServiceTest {
         assertThatThrownBy(() -> service.create(draft(List.of(new OrderDraft.Detail(7L, 1)))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Uno o più articoli non esistono");
+    }
+
+    @Test
+    void createsCustomDetailWithoutCatalogArticle() {
+        when(workOrderRepository.findById(3L)).thenReturn(java.util.Optional.of(workOrder(3L)));
+        when(articleRepository.findAllById(any())).thenReturn(List.of());
+        when(orderRepository.save(org.mockito.ArgumentMatchers.any(OrderJpa.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderDraft.Detail custom = new OrderDraft.Detail(
+                null, 4, "  Guarnizione   speciale  ", null, "PZ", new BigDecimal("2.50"));
+        OrderJpa created = service.create(draft(List.of(custom)));
+
+        assertThat(created.getDetails()).singleElement().satisfies(detail -> {
+            assertThat(detail.getArticle()).isNull();
+            assertThat(detail.getCustomDescription()).isEqualTo("Guarnizione speciale");
+            assertThat(detail.getCustomSku()).isNull();
+            assertThat(detail.getCustomUnitOfMeasure()).isEqualTo("PZ");
+            assertThat(detail.getUnitPrice()).isEqualByComparingTo("2.50");
+            assertThat(detail.getStatus()).isEqualTo(OrderDetailStatus.TO_PICK);
+        });
+    }
+
+    @Test
+    void rejectsIncompleteOrMixedCustomDetails() {
+        assertThatThrownBy(() -> service.create(draft(List.of(
+                new OrderDraft.Detail(null, 1, "Senza prezzo", null, null, null)))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("La riga non censita richiede descrizione e prezzo unitario");
+
+        assertThatThrownBy(() -> service.create(draft(List.of(
+                new OrderDraft.Detail(7L, 1, "Dato manomesso", null, null, new BigDecimal("1.00"))))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Una riga censita non può contenere dati liberi");
     }
 
     @Test

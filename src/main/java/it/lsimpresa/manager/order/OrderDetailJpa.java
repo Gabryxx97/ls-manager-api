@@ -31,7 +31,10 @@ import java.math.BigDecimal;
                 name = "uk_order_detail_order_article",
                 columnNames = {"order_id", "article_id"}))
 @Check(name = "ck_order_detail_quantities", constraints =
-        "quantity > 0 AND picked_quantity >= 0 AND picked_quantity <= quantity")
+        "quantity > 0 AND picked_quantity >= 0 AND picked_quantity <= quantity " +
+        "AND ((article_id IS NOT NULL AND custom_description IS NULL " +
+        "AND custom_sku IS NULL AND custom_unit_of_measure IS NULL) " +
+        "OR (article_id IS NULL AND custom_description IS NOT NULL AND unit_price IS NOT NULL))")
 public class OrderDetailJpa {
 
     @Id
@@ -46,13 +49,20 @@ public class OrderDetailJpa {
             foreignKey = @ForeignKey(name = "fk_order_detail_order"))
     private OrderJpa order;
 
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
             name = "article_id",
-            nullable = false,
             foreignKey = @ForeignKey(name = "fk_order_detail_article"))
     private ArticleJpa article;
+
+    @Column(name = "custom_description", columnDefinition = "text")
+    private String customDescription;
+
+    @Column(name = "custom_sku", length = 64)
+    private String customSku;
+
+    @Column(name = "custom_unit_of_measure", length = 16)
+    private String customUnitOfMeasure;
 
     @NotNull
     @Positive
@@ -70,4 +80,17 @@ public class OrderDetailJpa {
 
     @Column(name = "unit_price", precision = 12, scale = 2)
     private BigDecimal unitPrice;
+
+    public boolean isCustom() {
+        return article == null;
+    }
+
+    public String displaySku() {
+        if (article != null) return article.getSku();
+        return customSku == null || customSku.isBlank() ? "NON CENSITO" : customSku;
+    }
+
+    public String displayDescription() {
+        return article != null ? article.getDescription() : customDescription;
+    }
 }

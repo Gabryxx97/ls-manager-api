@@ -8,6 +8,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -36,6 +38,7 @@ public class OrderController extends SearchControllerBase {
     private final ISearchService searchService;
     private final OrderService orderService;
     private final OrderMapper orderMapper;
+    private final OrderExportService orderExportService;
     private final UserPrincipal userPrincipal;
 
     @GetMapping
@@ -64,6 +67,19 @@ public class OrderController extends SearchControllerBase {
         OrderJpa order = orderService.findDetailed(id);
         assertCanAccess(order);
         return ResponseEntity.ok(orderMapper.toDto(order));
+    }
+
+    @GetMapping("/{id}/export")
+    public ResponseEntity<byte[]> export(@PathVariable Long id,
+                                         @RequestParam ExportScope scope,
+                                         @RequestParam ExportFormat format) {
+        OrderExportService.ExportDocument document = orderExportService.export(
+                id, scope, format, userPrincipal.findUserByPrincipal(), isAdmin());
+        return ResponseEntity.ok()
+                .contentType(document.contentType())
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + document.filename() + "\"")
+                .body(document.content());
     }
 
     @PostMapping

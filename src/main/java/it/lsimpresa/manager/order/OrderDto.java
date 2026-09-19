@@ -26,12 +26,14 @@ public class OrderDto {
     public static class Detail {
         private Long id;
         private Long articleId;
+        private boolean custom;
         private String articleDescription;
         private Integer quantity;
         private OrderDetailStatus status;
         private Integer pickedQuantity;
         private Integer remainingQuantity;
         private String articleSku;
+        private String unitOfMeasure;
         private BigDecimal unitPrice;
         private BigDecimal subtotal;
     }

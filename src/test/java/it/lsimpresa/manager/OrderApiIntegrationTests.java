@@ -26,6 +26,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.hamcrest.Matchers.containsString;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -221,6 +222,86 @@ class OrderApiIntegrationTests {
                 .andExpect(header().string("Content-Range", "items 0-0/1"))
                 .andExpect(jsonPath("$[0].name").value("Ordine urgente"))
                 .andExpect(jsonPath("$[0].details").doesNotExist());
+    }
+
+    @Test
+    void createsMixedOrderWithCustomDetailWithoutChangingCatalog() throws Exception {
+        ArticleJpa article = saveArticle("Articolo censito", null);
+        WorkOrderJpa workOrder = saveWorkOrder("Ordine misto");
+        long catalogSize = articleRepository.count();
+
+        String location = mockMvc.perform(post("/api/orders")
+                        .with(role("ADMIN_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(("""
+                                {"workOrderId":%d,"date":"2099-09-05","priority":"STANDARD","category":"HARDWARE_MISC",
+                                 "details":[
+                                   {"articleId":%d,"quantity":2},
+                                   {"articleDescription":"Guarnizione speciale","articleSku":"G-SP","unitOfMeasure":"PZ","unitPrice":2.50,"quantity":4}
+                                 ]}
+                                """).formatted(workOrder.getId(), article.getId())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.details.length()").value(2))
+                .andExpect(jsonPath("$.details[1].custom").value(true))
+                .andExpect(jsonPath("$.details[1].articleId").doesNotExist())
+                .andExpect(jsonPath("$.details[1].articleSku").value("G-SP"))
+                .andExpect(jsonPath("$.details[1].articleDescription").value("Guarnizione speciale"))
+                .andExpect(jsonPath("$.details[1].unitOfMeasure").value("PZ"))
+                .andExpect(jsonPath("$.details[1].unitPrice").value(2.50))
+                .andExpect(jsonPath("$.details[1].status").value("TO_PICK"))
+                .andExpect(jsonPath("$.netTotal").value(12.00))
+                .andReturn().getResponse().getHeader("Location");
+
+        assertThat(articleRepository.count()).isEqualTo(catalogSize);
+        long orderId = Long.parseLong(location.substring(location.lastIndexOf('/') + 1));
+        OrderJpa saved = orderRepository.findDetailedById(orderId).orElseThrow();
+        assertThat(saved.getDetails().get(1).getArticle()).isNull();
+
+        mockMvc.perform(get("/api/orders/{id}/export", orderId)
+                        .param("scope", "full").param("format", "csv")
+                        .with(role("ADMIN_ROLE")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("G-SP")))
+                .andExpect(content().string(containsString("Guarnizione speciale")));
+
+        mockMvc.perform(put("/api/orders/{id}", orderId)
+                        .with(role("ADMIN_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(("""
+                                {"workOrderId":%d,"date":"2099-09-06","priority":"HIGH","category":"HARDWARE_MISC",
+                                 "details":[{"articleDescription":"Guarnizione modificata","unitPrice":3.75,"quantity":2}]}
+                                """).formatted(workOrder.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.details.length()").value(1))
+                .andExpect(jsonPath("$.details[0].custom").value(true))
+                .andExpect(jsonPath("$.details[0].articleSku").value("NON CENSITO"))
+                .andExpect(jsonPath("$.details[0].articleDescription").value("Guarnizione modificata"))
+                .andExpect(jsonPath("$.netTotal").value(7.50));
+        assertThat(articleRepository.count()).isEqualTo(catalogSize);
+    }
+
+    @Test
+    void rejectsIncompleteAndMixedCustomDetails() throws Exception {
+        ArticleJpa article = saveArticle("Articolo protetto", null);
+        WorkOrderJpa workOrder = saveWorkOrder("Righe non valide");
+
+        mockMvc.perform(post("/api/orders").with(role("ADMIN_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(("""
+                                {"workOrderId":%d,"date":"2099-09-05","priority":"LOW","category":"HYDRAULIC",
+                                 "details":[{"articleDescription":"Senza prezzo","quantity":1}]}
+                                """).formatted(workOrder.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("La riga non censita richiede descrizione e prezzo unitario"));
+
+        mockMvc.perform(post("/api/orders").with(role("ADMIN_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(("""
+                                {"workOrderId":%d,"date":"2099-09-05","priority":"LOW","category":"HYDRAULIC",
+                                 "details":[{"articleId":%d,"articleDescription":"Dato manomesso","unitPrice":1.00,"quantity":1}]}
+                                """).formatted(workOrder.getId(), article.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Una riga censita non può contenere dati liberi"));
     }
 
     @Test
@@ -553,6 +634,71 @@ class OrderApiIntegrationTests {
                         .with(role(other.getUsername(), "WAREHOUSE_ROLE")).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assignedWarehouseId").value(other.getId()));
+    }
+
+    @Test
+    void adminCanExportFullOrderAsCsvAndPdf() throws Exception {
+        ArticleJpa article = saveArticle("Bullone export", "Bullone zincato");
+        long orderId = createOrder(article.getId());
+
+        mockMvc.perform(get("/api/orders/{id}/export", orderId)
+                        .param("scope", "full").param("format", "csv")
+                        .with(role("ADMIN_ROLE")))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith("text/csv"))
+                .andExpect(header().string("Content-Disposition", containsString("ordine-" + orderId + "-completo.csv")))
+                .andExpect(content().string(containsString("Quantità richiesta")))
+                .andExpect(content().string(containsString("Bullone zincato")));
+
+        mockMvc.perform(get("/api/orders/{id}/export", orderId)
+                        .param("scope", "full").param("format", "pdf")
+                        .with(role("ADMIN_ROLE")))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PDF))
+                .andExpect(header().string("Content-Disposition", containsString("ordine-" + orderId + "-completo.pdf")));
+    }
+
+    @Test
+    void assignedWarehouseCanExportOnlyPurchaseLinesAndOthersCannot() throws Exception {
+        ArticleJpa article = saveArticle("Rondella export", "Rondella M8");
+        long orderId = createAssignableOrder(article.getId());
+        UserJpa assigned = saveWarehouse("warehouse-export-assigned");
+        UserJpa other = saveWarehouse("warehouse-export-other");
+        mockMvc.perform(post("/api/orders/{id}/claim", orderId)
+                        .with(role(assigned.getUsername(), "WAREHOUSE_ROLE")).with(csrf()))
+                .andExpect(status().isOk());
+        Long detailId = orderRepository.findDetailedById(orderId).orElseThrow().getDetails().getFirst().getId();
+        mockMvc.perform(post("/api/orders/{orderId}/details/{detailId}/to-purchase", orderId, detailId)
+                        .with(role(assigned.getUsername(), "WAREHOUSE_ROLE")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"pickedQuantity\":1}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/orders/{id}/export", orderId)
+                        .param("scope", "purchase").param("format", "csv")
+                        .with(role(assigned.getUsername(), "WAREHOUSE_ROLE")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Quantità da ordinare")))
+                .andExpect(content().string(containsString(";\"1\";\"€ 1,00\";\"€ 1,00\"")));
+
+        mockMvc.perform(get("/api/orders/{id}/export", orderId)
+                        .param("scope", "purchase").param("format", "csv")
+                        .with(role(other.getUsername(), "WAREHOUSE_ROLE")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/orders/{id}/export", orderId)
+                        .param("scope", "purchase").param("format", "csv")
+                        .with(role("OPERATOR_ROLE")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void purchaseExportRejectsOrdersWithoutPurchaseLines() throws Exception {
+        ArticleJpa article = saveArticle("Nessun acquisto", null);
+        long orderId = createOrder(article.getId());
+        mockMvc.perform(get("/api/orders/{id}/export", orderId)
+                        .param("scope", "purchase").param("format", "csv")
+                        .with(role("ADMIN_ROLE")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("Non ci sono righe da ordinare per questo ordine"));
     }
 
     private long createOrder(Long articleId) throws Exception {

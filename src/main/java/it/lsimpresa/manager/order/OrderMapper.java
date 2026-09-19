@@ -46,7 +46,9 @@ public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
 
     public OrderDraft toDraft(OrderRequestDto request) {
         List<OrderDraft.Detail> details = request.getDetails().stream()
-                .map(detail -> new OrderDraft.Detail(detail.getArticleId(), detail.getQuantity()))
+                .map(detail -> new OrderDraft.Detail(
+                        detail.getArticleId(), detail.getQuantity(), detail.getArticleDescription(),
+                        detail.getArticleSku(), detail.getUnitOfMeasure(), detail.getUnitPrice()))
                 .toList();
         return new OrderDraft(request.getWorkOrderId(), request.getDate(), request.getPriority(),
                 request.getCategory(), request.getNotes(), details);
@@ -61,9 +63,11 @@ public class OrderMapper implements DtoMapper<OrderSummaryDto, OrderJpa> {
         ArticleJpa article = entity.getArticle();
         OrderDto.Detail dto = new OrderDto.Detail();
         dto.setId(entity.getId());
-        dto.setArticleId(article.getId());
-        dto.setArticleSku(article.getSku());
-        dto.setArticleDescription(article.getDescription());
+        dto.setCustom(entity.isCustom());
+        dto.setArticleId(article == null ? null : article.getId());
+        dto.setArticleSku(entity.displaySku());
+        dto.setArticleDescription(entity.displayDescription());
+        dto.setUnitOfMeasure(article == null ? entity.getCustomUnitOfMeasure() : article.getUnitOfMeasure());
         dto.setQuantity(entity.getQuantity());
         dto.setStatus(entity.getStatus());
         dto.setPickedQuantity(entity.getPickedQuantity());

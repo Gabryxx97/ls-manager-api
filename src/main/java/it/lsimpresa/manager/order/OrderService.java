@@ -215,14 +215,14 @@ public class OrderService {
             throw new IllegalArgumentException("L'ordine deve contenere almeno una riga");
         }
 
-        Map<Long, Integer> quantities = validateAndCollectDetails(draft.details());
+        Set<Long> articleIds = validateAndCollectDetails(draft.details());
         WorkOrderJpa workOrder = workOrderRepository.findById(draft.workOrderId())
                 .orElseThrow(() -> new IllegalArgumentException("La commessa non esiste"));
         Map<Long, ArticleJpa> articles = new LinkedHashMap<>();
-        articleRepository.findAllById(quantities.keySet())
+        articleRepository.findAllById(articleIds)
                 .forEach(article -> articles.put(article.getId(), article));
 
-        if (articles.size() != quantities.size()) {
+        if (articles.size() != articleIds.size()) {
             throw new IllegalArgumentException("Uno o più articoli non esistono");
         }
 
@@ -233,18 +233,27 @@ public class OrderService {
                 historicalPrices.put(detail.getArticle().getId(), detail.getUnitPrice());
             }
         });
-        quantities.forEach((articleId, quantity) -> {
+        draft.details().forEach(draftDetail -> {
             OrderDetailJpa detail = new OrderDetailJpa();
-            detail.setArticle(articles.get(articleId));
-            detail.setQuantity(quantity);
+            detail.setQuantity(draftDetail.quantity());
             detail.setPickedQuantity(0);
             detail.setStatus(OrderDetailStatus.TO_PICK);
-            BigDecimal historical = historicalPrices.get(articleId);
-            BigDecimal price = historical != null ? historical : articles.get(articleId).getUnitPrice();
-            if (price == null) {
-                throw new IllegalArgumentException("Uno o più articoli non hanno un prezzo unitario");
+
+            if (draftDetail.articleId() != null) {
+                ArticleJpa article = articles.get(draftDetail.articleId());
+                detail.setArticle(article);
+                BigDecimal historical = historicalPrices.get(draftDetail.articleId());
+                BigDecimal price = historical != null ? historical : article.getUnitPrice();
+                if (price == null) {
+                    throw new IllegalArgumentException("Uno o più articoli non hanno un prezzo unitario");
+                }
+                detail.setUnitPrice(price);
+            } else {
+                detail.setCustomDescription(normalizeRequired(draftDetail.articleDescription()));
+                detail.setCustomSku(normalizeOptional(draftDetail.articleSku()));
+                detail.setCustomUnitOfMeasure(normalizeOptional(draftDetail.unitOfMeasure()));
+                detail.setUnitPrice(draftDetail.unitPrice());
             }
-            detail.setUnitPrice(price);
             details.add(detail);
         });
 
@@ -310,22 +319,53 @@ public class OrderService {
         return notes.trim();
     }
 
-    private Map<Long, Integer> validateAndCollectDetails(List<OrderDraft.Detail> details) {
-        Map<Long, Integer> quantities = new LinkedHashMap<>();
+    private Set<Long> validateAndCollectDetails(List<OrderDraft.Detail> details) {
         Set<Long> articleIds = new HashSet<>();
 
         for (OrderDraft.Detail detail : details) {
-            if (detail == null || detail.articleId() == null) {
-                throw new IllegalArgumentException("Ogni riga deve riferirsi a un articolo");
+            if (detail == null) {
+                throw new IllegalArgumentException("La riga ordine è obbligatoria");
             }
             if (detail.quantity() == null || detail.quantity() <= 0) {
                 throw new IllegalArgumentException("La quantità deve essere maggiore di zero");
             }
-            if (!articleIds.add(detail.articleId())) {
-                throw new IllegalArgumentException("Lo stesso articolo non può comparire più volte nell'ordine");
+
+            if (detail.articleId() != null) {
+                if (hasText(detail.articleDescription()) || hasText(detail.articleSku())
+                        || hasText(detail.unitOfMeasure()) || detail.unitPrice() != null) {
+                    throw new IllegalArgumentException("Una riga censita non può contenere dati liberi");
+                }
+                if (!articleIds.add(detail.articleId())) {
+                    throw new IllegalArgumentException("Lo stesso articolo non può comparire più volte nell'ordine");
+                }
+            } else {
+                if (!hasText(detail.articleDescription()) || detail.unitPrice() == null) {
+                    throw new IllegalArgumentException("La riga non censita richiede descrizione e prezzo unitario");
+                }
+                validateCustomPrice(detail.unitPrice());
             }
-            quantities.put(detail.articleId(), detail.quantity());
         }
-        return quantities;
+        return articleIds;
+    }
+
+    private void validateCustomPrice(BigDecimal price) {
+        BigDecimal normalized = price.stripTrailingZeros();
+        int scale = Math.max(normalized.scale(), 0);
+        int integerDigits = normalized.precision() - normalized.scale();
+        if (price.signum() < 0 || scale > 2 || integerDigits > 10) {
+            throw new IllegalArgumentException("Il prezzo deve essere non negativo e avere al massimo due decimali");
+        }
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private String normalizeRequired(String value) {
+        return value.trim().replaceAll("\\s+", " ");
+    }
+
+    private String normalizeOptional(String value) {
+        return hasText(value) ? value.trim().replaceAll("\\s+", " ") : null;
     }
 }

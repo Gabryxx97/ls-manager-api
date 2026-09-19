@@ -129,8 +129,22 @@ public class OrderJpa implements Searchable {
 
         Set<Long> articleIds = new HashSet<>();
         for (OrderDetailJpa detail : details) {
-            if (detail.getArticle() == null || detail.getArticle().getId() == null) {
-                throw new IllegalArgumentException("Ogni riga deve riferirsi a un articolo esistente");
+            if (detail.getArticle() == null) {
+                if (detail.getCustomDescription() == null || detail.getCustomDescription().isBlank()
+                        || detail.getUnitPrice() == null) {
+                    throw new IllegalArgumentException("La riga non censita richiede descrizione e prezzo unitario");
+                }
+            } else {
+                if (detail.getArticle().getId() == null) {
+                    throw new IllegalArgumentException("L'articolo della riga non è valido");
+                }
+                if (detail.getCustomDescription() != null || detail.getCustomSku() != null
+                        || detail.getCustomUnitOfMeasure() != null) {
+                    throw new IllegalArgumentException("Una riga censita non può contenere dati liberi");
+                }
+                if (!articleIds.add(detail.getArticle().getId())) {
+                    throw new IllegalArgumentException("Lo stesso articolo non può comparire più volte nell'ordine");
+                }
             }
             if (detail.getQuantity() == null || detail.getQuantity() <= 0) {
                 throw new IllegalArgumentException("La quantità deve essere maggiore di zero");
@@ -138,9 +152,6 @@ public class OrderJpa implements Searchable {
             if (detail.getPickedQuantity() == null || detail.getPickedQuantity() < 0
                     || detail.getPickedQuantity() > detail.getQuantity()) {
                 throw new IllegalArgumentException("La quantità prelevata non è valida");
-            }
-            if (!articleIds.add(detail.getArticle().getId())) {
-                throw new IllegalArgumentException("Lo stesso articolo non può comparire più volte nell'ordine");
             }
         }
     }

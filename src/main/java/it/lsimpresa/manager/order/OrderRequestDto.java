@@ -4,6 +4,9 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.time.LocalDate;
@@ -31,11 +34,23 @@ public class OrderRequestDto {
 
     @Data
     public static class Detail {
-        @NotNull(message = "L'articolo è obbligatorio")
         private Long articleId;
 
         @NotNull(message = "La quantità è obbligatoria")
         @Positive(message = "La quantità deve essere maggiore di zero")
         private Integer quantity;
+
+        @Size(max = 2000, message = "La descrizione non può superare 2.000 caratteri")
+        private String articleDescription;
+
+        @Size(max = 64, message = "Il codice non può superare 64 caratteri")
+        private String articleSku;
+
+        @Size(max = 16, message = "L'unità di misura non può superare 16 caratteri")
+        private String unitOfMeasure;
+
+        @DecimalMin(value = "0.00", message = "Il prezzo non può essere negativo")
+        @Digits(integer = 10, fraction = 2, message = "Il prezzo deve avere al massimo due decimali")
+        private java.math.BigDecimal unitPrice;
     }
 }
