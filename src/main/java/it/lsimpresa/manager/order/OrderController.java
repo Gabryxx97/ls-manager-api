@@ -83,7 +83,7 @@ public class OrderController extends SearchControllerBase {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ADMIN_ROLE', 'OPERATOR_ROLE')")
+    @PreAuthorize("hasAnyAuthority('ADMIN_ROLE', 'OPERATOR_ROLE', 'WAREHOUSE_ROLE')")
     public ResponseEntity<OrderDto> create(@Valid @RequestBody OrderRequestDto request) {
         OrderJpa created = orderService.create(orderMapper.toDraft(request), userPrincipal.findUserByPrincipal(), isAdmin());
         return ResponseEntity.created(URI.create("/api/orders/" + created.getId()))
